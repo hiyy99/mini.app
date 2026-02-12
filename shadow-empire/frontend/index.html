@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Shadow Empire</title>
+    <link rel="stylesheet" href="css/style.css?v=8">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+    <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
+</head>
+<body>
+    <div id="loading-screen">
+        <div class="loading-title">SHADOW EMPIRE</div>
+        <div class="loading-sub">Загрузка...</div>
+        <div class="loading-bar"><div class="loading-fill"></div></div>
+    </div>
+
+    <!-- Generic popup -->
+    <div id="popup-overlay" class="popup hidden">
+        <div class="popup-content">
+            <div id="popup-icon" class="popup-icon"></div>
+            <div id="popup-title" class="popup-title"></div>
+            <div id="popup-body" class="popup-body"></div>
+            <div id="popup-amount" class="popup-amount"></div>
+            <div id="popup-sub" class="popup-warning"></div>
+            <button class="btn btn-primary" onclick="closePopup()">OK</button>
+        </div>
+    </div>
+
+    <!-- Case open overlay (CS:GO roulette) -->
+    <div id="case-overlay" class="popup hidden">
+        <div class="popup-content case-open-popup">
+            <div id="case-roulette" class="case-roulette hidden">
+                <div class="case-roulette-pointer"></div>
+                <div class="case-roulette-viewport">
+                    <div id="case-roulette-strip" class="case-roulette-strip"></div>
+                </div>
+            </div>
+            <div id="case-open-result" class="case-open-result hidden">
+                <div id="case-won-emoji" class="case-won-emoji"></div>
+                <div id="case-won-name" class="case-won-name"></div>
+                <div id="case-won-rarity" class="case-won-rarity"></div>
+                <div id="case-won-desc" class="case-won-desc"></div>
+            </div>
+            <button id="case-ok-btn" class="btn btn-primary hidden" onclick="closeCaseOverlay()">OK</button>
+        </div>
+    </div>
+
+    <!-- Login reward overlay -->
+    <div id="login-overlay" class="popup hidden">
+        <div class="popup-content login-popup-content">
+            <div class="login-popup-title">🎁 Ежедневный бонус</div>
+            <div id="login-days" class="login-days"></div>
+            <button id="login-claim-btn" class="btn btn-primary" onclick="claimLoginReward()">Забрать</button>
+        </div>
+    </div>
+
+    <div id="game" class="hidden">
+        <!-- Top bar -->
+        <div class="top-bar">
+            <div class="cash-display">
+                <span id="vip-badge" class="vip-badge hidden">👑</span>
+                <span class="cash-icon">💵</span>
+                <span id="cash">$0</span>
+            </div>
+            <div class="income-display">
+                <span id="ad-boost-indicator" class="ad-boost-indicator hidden">x2</span>
+                <span id="income-per-sec">$0/с</span>
+            </div>
+        </div>
+
+        <!-- Suspicion -->
+        <div class="suspicion-bar">
+            <div class="suspicion-label">
+                <span>🚔 Подозрение</span>
+                <span id="suspicion-text">0%</span>
+            </div>
+            <div class="suspicion-track">
+                <div id="suspicion-fill" class="suspicion-fill"></div>
+            </div>
+        </div>
+
+        <!-- Reputation -->
+        <div class="reputation-bar">
+            <div class="rep-item rep-fear"><span>😈 Страх</span><span id="rep-fear">0</span></div>
+            <div class="rep-item rep-respect"><span>🤝 Уважение</span><span id="rep-respect">0</span></div>
+            <div class="rep-item rep-level"><span>⭐ Уровень</span><span id="player-level">0</span></div>
+        </div>
+
+        <!-- Tab content area -->
+        <div class="tab-content-area">
+            <!-- BUSINESS TAB -->
+            <div id="tab-business" class="tab-content active">
+                <div id="ad-btn-business" class="ad-reward-btn hidden" onclick="watchAd('income_boost')">
+                    <span class="ad-reward-icon">📺</span>
+                    <span class="ad-reward-text">x2 доход на 5 мин</span>
+                </div>
+                <div class="sub-tabs">
+                    <button class="sub-tab active" onclick="switchSubTab('legal',this)">🏢 Легальный</button>
+                    <button class="sub-tab" onclick="switchSubTab('shadow',this)">🌑 Теневой</button>
+                    <button class="sub-tab" onclick="switchSubTab('upgrades-sub',this)">💎 Вложения</button>
+                </div>
+                <div id="legal-list" class="business-list"></div>
+                <div id="shadow-list" class="business-list hidden"></div>
+                <div id="upgrades-sub-list" class="business-list hidden"></div>
+            </div>
+
+            <!-- CASINO TAB -->
+            <div id="tab-casino" class="tab-content">
+                <div id="ad-btn-casino" class="ad-reward-btn hidden" onclick="watchAd('free_bet')">
+                    <span class="ad-reward-icon">📺</span>
+                    <span class="ad-reward-text">Бесплатная ставка $1,000</span>
+                </div>
+                <div id="casino-menu">
+                    <div class="tab-header"><h2>🎰 Казино</h2><p>Выбери игру</p></div>
+                    <div class="casino-menu-grid">
+                        <div class="casino-menu-card" onclick="openCasinoGame('coinflip')">
+                            <div class="casino-menu-emoji">🪙</div>
+                            <div class="casino-menu-name">Монетка</div>
+                            <div class="casino-menu-desc">Орёл или решка — x2</div>
+                        </div>
+                        <div class="casino-menu-card" onclick="openCasinoGame('dice')">
+                            <div class="casino-menu-emoji">🎲</div>
+                            <div class="casino-menu-name">Кости</div>
+                            <div class="casino-menu-desc">Больше, меньше или 7</div>
+                        </div>
+                        <div class="casino-menu-card" onclick="openCasinoGame('slots')">
+                            <div class="casino-menu-emoji">🎰</div>
+                            <div class="casino-menu-name">Слоты</div>
+                            <div class="casino-menu-desc">Крути — до x100</div>
+                        </div>
+                        <div class="casino-menu-card" onclick="openCasinoGame('roulette')">
+                            <div class="casino-menu-emoji">🎡</div>
+                            <div class="casino-menu-name">Рулетка</div>
+                            <div class="casino-menu-desc">Красное, чёрное, числа</div>
+                        </div>
+                    </div>
+                </div>
+                <div id="casino-game-view" class="hidden">
+                    <button class="casino-back-btn" onclick="closeCasinoGame()">← Назад</button>
+                    <div id="cg-coinflip" class="casino-game-inner hidden">
+                        <div class="casino-game-title">🪙 Монетка <span class="casino-multi">x2</span></div>
+                        <div class="casino-bet-row">
+                            <button class="bet-adj" onclick="adjBet('coinflip',-100)">-</button>
+                            <input type="number" id="bet-coinflip" class="bet-input" value="100" min="10">
+                            <button class="bet-adj" onclick="adjBet('coinflip',100)">+</button>
+                        </div>
+                        <div class="casino-quick-bets">
+                            <button class="qbet" onclick="addBet('coinflip',100)">$100</button>
+                            <button class="qbet" onclick="addBet('coinflip',1000)">$1K</button>
+                            <button class="qbet" onclick="addBet('coinflip',10000)">$10K</button>
+                            <button class="qbet" onclick="setBetAll('coinflip')">ALL IN</button>
+                        </div>
+                        <div class="casino-play-area"><div id="coinflip-anim" class="coinflip-anim">🪙</div></div>
+                        <div class="casino-buttons">
+                            <button class="btn-casino heads" onclick="playCasino('coinflip','heads')">👑 Орёл</button>
+                            <button class="btn-casino tails" onclick="playCasino('coinflip','tails')">🔢 Решка</button>
+                        </div>
+                    </div>
+                    <div id="cg-dice" class="casino-game-inner hidden">
+                        <div class="casino-game-title">🎲 Кости</div>
+                        <div class="casino-bet-row">
+                            <button class="bet-adj" onclick="adjBet('dice',-100)">-</button>
+                            <input type="number" id="bet-dice" class="bet-input" value="100" min="10">
+                            <button class="bet-adj" onclick="adjBet('dice',100)">+</button>
+                        </div>
+                        <div class="casino-quick-bets">
+                            <button class="qbet" onclick="addBet('dice',100)">$100</button>
+                            <button class="qbet" onclick="addBet('dice',1000)">$1K</button>
+                            <button class="qbet" onclick="addBet('dice',10000)">$10K</button>
+                            <button class="qbet" onclick="setBetAll('dice')">ALL IN</button>
+                        </div>
+                        <div class="casino-play-area">
+                            <div id="dice-display" class="dice-display">🎲 🎲</div>
+                            <div id="dice-total" class="dice-total"></div>
+                        </div>
+                        <div class="casino-buttons">
+                            <button class="btn-casino" onclick="playCasino('dice','under')">⬇️ Меньше 7</button>
+                            <button class="btn-casino gold" onclick="playCasino('dice','seven')">7️⃣ Ровно 7 (x5)</button>
+                            <button class="btn-casino" onclick="playCasino('dice','over')">⬆️ Больше 7</button>
+                        </div>
+                    </div>
+                    <div id="cg-slots" class="casino-game-inner hidden">
+                        <div class="casino-game-title">🎰 Слоты <span class="casino-multi">до x100</span></div>
+                        <div class="casino-bet-row">
+                            <button class="bet-adj" onclick="adjBet('slots',-100)">-</button>
+                            <input type="number" id="bet-slots" class="bet-input" value="100" min="50">
+                            <button class="bet-adj" onclick="adjBet('slots',100)">+</button>
+                        </div>
+                        <div class="casino-quick-bets">
+                            <button class="qbet" onclick="addBet('slots',100)">$100</button>
+                            <button class="qbet" onclick="addBet('slots',1000)">$1K</button>
+                            <button class="qbet" onclick="addBet('slots',10000)">$10K</button>
+                            <button class="qbet" onclick="setBetAll('slots')">ALL IN</button>
+                        </div>
+                        <div id="slot-display" class="slot-display">❓ ❓ ❓</div>
+                        <button class="btn-casino spin" onclick="playCasino('slots','')">🎰 КРУТИТЬ</button>
+                        <div class="slots-paytable">
+                            <div class="paytable-title">Выплаты:</div>
+                            <div class="paytable-row">🍀🍀🍀 x100 | 7️⃣7️⃣7️⃣ x50 | 💎💎💎 x25</div>
+                            <div class="paytable-row">🔔🔔🔔 x12 | 🍋🍋🍋 x8 | 🍒🍒🍒 x5</div>
+                            <div class="paytable-row">2 совпадения — x2</div>
+                        </div>
+                    </div>
+                    <div id="cg-roulette" class="casino-game-inner hidden">
+                        <div class="casino-game-title">🎡 Рулетка</div>
+                        <div class="casino-bet-row">
+                            <button class="bet-adj" onclick="adjBet('roulette',-100)">-</button>
+                            <input type="number" id="bet-roulette" class="bet-input" value="100" min="20">
+                            <button class="bet-adj" onclick="adjBet('roulette',100)">+</button>
+                        </div>
+                        <div class="casino-quick-bets">
+                            <button class="qbet" onclick="addBet('roulette',100)">$100</button>
+                            <button class="qbet" onclick="addBet('roulette',1000)">$1K</button>
+                            <button class="qbet" onclick="addBet('roulette',10000)">$10K</button>
+                            <button class="qbet" onclick="setBetAll('roulette')">ALL IN</button>
+                        </div>
+                        <div class="casino-play-area">
+                            <div id="roulette-display" class="roulette-display">🎡</div>
+                            <div id="roulette-result" class="roulette-result"></div>
+                        </div>
+                        <div class="casino-buttons">
+                            <button class="btn-casino red" onclick="playCasino('roulette','red')">🔴 Красное</button>
+                            <button class="btn-casino black" onclick="playCasino('roulette','black')">⚫ Чёрное</button>
+                        </div>
+                        <div class="casino-buttons" style="margin-top:6px">
+                            <button class="btn-casino" onclick="playCasino('roulette','even')">Чёт</button>
+                            <button class="btn-casino" onclick="playCasino('roulette','odd')">Нечёт</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROBBERY TAB (now "Дела" with subtabs) -->
+            <div id="tab-robbery" class="tab-content">
+                <div id="ad-btn-robbery" class="ad-reward-btn hidden" onclick="watchAd('reset_cooldown')">
+                    <span class="ad-reward-icon">📺</span>
+                    <span class="ad-reward-text">Сбросить КД ограбления</span>
+                </div>
+                <div class="sub-tabs">
+                    <button class="sub-tab active" onclick="switchDelaSubTab('robberies',this)">🔫 Ограбления</button>
+                    <button class="sub-tab" onclick="switchDelaSubTab('missions',this)">📋 Миссии</button>
+                </div>
+                <div id="dela-robberies">
+                    <div class="tab-header"><h2>🔫 Тёмные дела</h2><p>Быстрые деньги, высокий риск</p></div>
+                    <div id="robbery-list" class="robbery-list"></div>
+                </div>
+                <div id="dela-missions" class="hidden">
+                    <div class="tab-header"><h2>📋 Ежедневные миссии</h2><p>Выполняй задания — получай награды</p></div>
+                    <div id="missions-list" class="missions-list"></div>
+                </div>
+            </div>
+
+            <!-- SHOP TAB (items + cases + black market + VIP) -->
+            <div id="tab-shop" class="tab-content">
+                <div class="sub-tabs">
+                    <button class="sub-tab active" onclick="switchShopSection('items',this)">🛒 Магазин</button>
+                    <button class="sub-tab" onclick="switchShopSection('cases',this)">📦 Кейсы</button>
+                    <button class="sub-tab" onclick="switchShopSection('market',this)">🔫 Чёрный рынок</button>
+                    <button class="sub-tab" onclick="switchShopSection('vip',this)">👑 VIP</button>
+                </div>
+                <!-- Regular shop -->
+                <div id="shop-items-section">
+                    <div class="shop-tabs">
+                        <button class="shop-tab active" onclick="switchShopTab('hat',this)">🎩 Шапки</button>
+                        <button class="shop-tab" onclick="switchShopTab('jacket',this)">🧥 Одежда</button>
+                        <button class="shop-tab" onclick="switchShopTab('accessory',this)">💍 Аксессуары</button>
+                        <button class="shop-tab" onclick="switchShopTab('car',this)">🚗 Тачки</button>
+                    </div>
+                    <div id="shop-list" class="shop-list"></div>
+                </div>
+                <!-- Cases -->
+                <div id="shop-cases-section" class="hidden">
+                    <div class="tab-header"><h2>📦 Кейсы</h2><p>Купи кейс — открой в инвентаре</p></div>
+                    <div id="cases-list" class="cases-grid"></div>
+                </div>
+                <!-- Black Market -->
+                <div id="shop-market-section" class="hidden">
+                    <div class="tab-header"><h2>🔫 Чёрный рынок</h2><p>Оружие и торговля</p></div>
+                    <h3 style="margin:10px 0 8px;font-size:.9rem">⚔️ Оружие</h3>
+                    <div id="weapons-list" class="shop-list"></div>
+                    <h3 style="margin:14px 0 8px;font-size:.9rem">🏪 Площадка игроков</h3>
+                    <div id="market-listings-list" class="shop-list"></div>
+                </div>
+                <!-- VIP Shop -->
+                <div id="shop-vip-section" class="hidden">
+                    <div id="vip-shop-content"></div>
+                </div>
+            </div>
+
+            <!-- CHARACTER TAB (with subtabs: Персонаж / Достижения) -->
+            <div id="tab-character" class="tab-content">
+                <div class="sub-tabs">
+                    <button class="sub-tab active" onclick="switchCharSubTab('char-main',this)">🕴️ Персонаж</button>
+                    <button class="sub-tab" onclick="switchCharSubTab('char-achievements',this)">🏆 Достижения</button>
+                </div>
+                <div id="char-main">
+                    <!-- Character card -->
+                    <div class="char-card" id="char-card">
+                        <div class="char-card-header">
+                            <div class="char-card-name"><span id="char-vip-badge" class="char-vip-badge hidden">👑 </span><span id="char-nickname">Новичок</span></div>
+                            <div class="char-card-level">Ур. <span id="char-level">0</span></div>
+                        </div>
+                        <div class="char-equipment" id="char-equipment"></div>
+                        <div class="char-bonuses" id="char-bonuses"></div>
+                    </div>
+                    <!-- Prestige section -->
+                    <div class="prestige-section" id="prestige-section">
+                        <h3>⚡ Престиж</h3>
+                        <div id="prestige-info"></div>
+                    </div>
+                    <!-- Inventory -->
+                    <div class="inv-section">
+                        <h3>🎒 Инвентарь</h3>
+                        <div id="inv-cases" class="inv-cases-row"></div>
+                        <div id="inv-list" class="inv-list"></div>
+                    </div>
+                    <!-- My market listings -->
+                    <div class="inv-section" id="my-listings-section">
+                        <h3>📋 Мои лоты на площадке</h3>
+                        <div id="my-listings-list" class="shop-list"></div>
+                    </div>
+                </div>
+                <div id="char-achievements" class="hidden">
+                    <div class="tab-header"><h2>🏆 Достижения</h2><p>Разблокируй и забери награды</p></div>
+                    <div id="achievements-list" class="achievements-list"></div>
+                </div>
+            </div>
+
+            <!-- GANG TAB (with subtabs: Банда / Территории / PvP / Рейтинг) -->
+            <div id="tab-gang" class="tab-content">
+                <div class="sub-tabs">
+                    <button class="sub-tab active" onclick="switchGangSubTab('gang-main',this)">👥 Банда</button>
+                    <button class="sub-tab" onclick="switchGangSubTab('gang-territories',this)">🗺 Территории</button>
+                    <button class="sub-tab" onclick="switchGangSubTab('gang-pvp',this)">⚔️ PvP</button>
+                    <button class="sub-tab" onclick="switchGangSubTab('gang-leaderboard',this)">🏆 Рейтинг</button>
+                </div>
+                <div id="gang-main">
+                    <div class="tab-header"><h2>👥 Банда</h2><p>Объединяйся и воюй</p></div>
+                    <div id="gang-section"></div>
+                    <div class="referral-section"></div>
+                </div>
+                <div id="gang-territories" class="hidden">
+                    <div class="tab-header"><h2>🗺 Территории</h2><p>Захватывайте районы для бонуса к доходу</p></div>
+                    <div id="territory-bonus-info" class="territory-bonus-info"></div>
+                    <div id="territories-list" class="territories-list"></div>
+                </div>
+                <div id="gang-pvp" class="hidden">
+                    <div class="tab-header"><h2>⚔️ PvP</h2><p>Напади на другого игрока</p></div>
+                    <div id="pvp-targets"></div>
+                    <button class="btn btn-primary" onclick="loadPvpTargets()" style="margin-top:10px;width:100%">Найти жертву</button>
+                </div>
+                <div id="gang-leaderboard" class="hidden">
+                    <div class="tab-header"><h2>🏆 Рейтинг</h2><p>Топ-20 игроков по заработку</p></div>
+                    <div id="leaderboard-list" class="leaderboard-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom nav -->
+        <div class="bottom-nav">
+            <button class="nav-btn active" data-tab="business" onclick="switchTab('business')"><span>🏢</span>Бизнес</button>
+            <button class="nav-btn" data-tab="casino" onclick="switchTab('casino')"><span>🎰</span>Казино</button>
+            <button class="nav-btn" data-tab="robbery" onclick="switchTab('robbery')"><span>🔫</span>Дела</button>
+            <button class="nav-btn" data-tab="shop" onclick="switchTab('shop')"><span>🛒</span>Магазин</button>
+            <button class="nav-btn" data-tab="character" onclick="switchTab('character')"><span>🕴️</span>Персонаж</button>
+            <button class="nav-btn" data-tab="gang" onclick="switchTab('gang')"><span>👥</span>Банда</button>
+        </div>
+    </div>
+
+    <script src="js/app.js?v=8"></script>
+</body>
+</html>
