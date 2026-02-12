@@ -16,7 +16,7 @@ from backend.game_config import VIP_PACKAGES, CASH_PACKAGES, CASE_PACKAGES
 
 # ── Config ──
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8553722467:AAFWR7NJUVtDveeSezAoOuuLoM8GssB3l8w")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://him-laptop-work-johnny.trycloudflare.com/static/index.html")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://tested-apollo-reprint-director.trycloudflare.com/static/index.html")
 DB_PATH = os.path.join(os.path.dirname(__file__), "game.db")
 
 logging.basicConfig(level=logging.INFO)
@@ -136,6 +136,13 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     )
             logger.info(f"Cases added for {tid}: {package_id}")
 
+        elif package_id == "skin_case":
+            await db.execute(
+                "INSERT INTO player_cases (telegram_id, case_id) VALUES (?, ?)",
+                (tid, "skin_case"),
+            )
+            logger.info(f"Skin case added for {tid}")
+
         else:
             logger.error(f"Unknown package_id: {package_id}")
             await db.close()
@@ -156,15 +163,29 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 def main():
     proxy_url = "socks5://HlMRqirXwH:36zs4QjEJm@193.238.152.5:32861"
-    request = HTTPXRequest(proxy=proxy_url)
-    app = Application.builder().token(BOT_TOKEN).request(request).build()
+    request = HTTPXRequest(
+        proxy=proxy_url,
+        connect_timeout=15.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=15.0,
+    )
+    app = Application.builder().token(BOT_TOKEN).request(request).get_updates_request(
+        HTTPXRequest(
+            proxy=proxy_url,
+            connect_timeout=15.0,
+            read_timeout=30.0,
+            write_timeout=30.0,
+            pool_timeout=15.0,
+        )
+    ).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
 
     logger.info("Bot started")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,20 @@ let S = {
     vipStatus: { active: false, until: 0, days_left: 0 },
     adBoostUntil: 0,
     vipPackages: {}, cashPackages: {}, casePackages: {}, tonPrices: {}, vipItems: {},
+    // Skins
+    playerSkins: [], equippedSkins: {}, skinsCfg: {}, skinRarities: {}, skinCase: {}, skinCaseVip: {},
+    // Tournament
+    tournamentScore: 0, tournamentPrize: null,
+    // Quests
+    playerQuests: [], questLines: [],
+    // Events
+    activeEvent: null, eventProgress: null,
+    // Boss
+    bossData: null,
+    // Achievement categories
+    achievementCategories: {}, tierInfo: {},
+    // Talent Tree
+    talentTreeCfg: {}, playerTalents: {}, talentPoints: 0,
 };
 
 // ── Adsgram SDK ──
@@ -83,9 +97,38 @@ async function init() {
         S.casePackages = r.case_packages || {};
         S.tonPrices = r.ton_prices || {};
         S.vipItems = r.vip_items || {};
+        // Skins
+        S.playerSkins = r.player_skins || [];
+        S.equippedSkins = r.equipped_skins || {};
+        S.skinsCfg = r.skins_config || {};
+        S.skinRarities = r.skin_rarities || {};
+        S.skinCase = r.skin_case || {};
+        S.skinCaseVip = r.skin_case_vip || {};
+        // Tournament
+        S.tournamentScore = r.tournament_score || 0;
+        S.tournamentPrize = r.tournament_prize || null;
+        // Quests
+        S.playerQuests = r.player_quests || [];
+        S.questLines = r.quest_lines || [];
+        // Events
+        S.activeEvent = r.active_event || null;
+        S.eventProgress = r.event_progress || null;
+        // Boss
+        S.bossData = r.boss_data || null;
+        // Achievement categories
+        S.achievementCategories = r.achievement_categories || {};
+        S.tierInfo = r.tier_info || {};
+        // Talent Tree
+        S.talentTreeCfg = r.talent_tree_config || {};
+        S.playerTalents = r.player_talents || {};
+        S.talentPoints = r.talent_points || 0;
 
         renderAll(); hideLoading(); startLoop();
 
+        // Show tournament prize popup
+        if (S.tournamentPrize) {
+            setTimeout(() => showPopup('🏆', 'Турнирная награда!', `Вчера: ${S.tournamentPrize.place} место`, `+$${fmt(S.tournamentPrize.prize.cash)}`, ''), 500);
+        }
         // Show login reward popup if can claim
         if (S.loginData && S.loginData.can_claim) {
             setTimeout(() => showLoginOverlay(), 800);
@@ -159,8 +202,9 @@ function renderAll() {
     renderRobberies(); renderCharacter(); renderShop(); renderCases();
     renderWeapons(); renderMarketListings(); renderInventory(); renderMyListings();
     renderGang(); renderReferral();
-    renderMissions(); renderPrestige(); renderTerritories(); renderAchievements();
+    renderMissions(); renderPrestige(); renderTalentTree(); renderTerritories(); renderAchievements();
     renderLeaderboard(); renderVipShop(); updateAdButtons(); updateVipBadges();
+    renderTournament(); renderQuests(); renderEventBanner(); renderBoss();
 }
 
 function updateHUD() {
@@ -203,10 +247,19 @@ function renderBusiness(type) {
         const mgr = owned && !owned.has_manager
             ? `<button class="btn-manager" onclick="hireManager('${c.id}')" ${S.displayCash>=c.manager_cost?'':'disabled'}>👔 $${fmt(c.manager_cost)}</button>`
             : owned?.has_manager ? `<span class="manager-badge">👔</span>` : '';
-        el.innerHTML += `<div class="business-card${locked?' locked':''}">
+
+        // Skin from equipped skins
+        const skinId = S.equippedSkins[c.id] || null;
+        const skinCfg = skinId ? S.skinsCfg[skinId] : null;
+        const skinClass = skinCfg ? ' ' + skinCfg.css : '';
+        const skinRarity = skinCfg ? S.skinRarities[skinCfg.rarity] : null;
+        const skinBadge = skinCfg ? `<span class="skin-badge" style="color:${skinRarity?.color||'#fff'};background:${skinRarity?.color||'#fff'}22">${skinCfg.name}</span>` : '';
+        const skinBtn = lvl > 0 && !locked ? `<span class="skin-equip-link" onclick="event.stopPropagation();showSkinEquip('${c.id}')" style="font-size:.6rem;color:var(--gold);cursor:pointer">${skinCfg ? '🎨' : '🎨 Скин'}</span>` : '';
+
+        el.innerHTML += `<div class="business-card${locked?' locked':''}${skinClass}">
             <div class="business-emoji">${c.emoji}</div>
             <div class="business-info">
-                <div class="business-name">${c.name}</div>
+                <div class="business-name">${c.name}${skinBadge}</div>
                 <div class="business-stats">
                     ${lvl?`<span class="business-level">Ур.${lvl}</span>`:''}
                     <span class="business-income">$${fmt(income)}/с</span>${susp}
@@ -215,7 +268,7 @@ function renderBusiness(type) {
             <div class="business-actions">
                 ${locked?`<span class="locked-text">🔒 Ур.${c.unlock_level}</span>`
                 :`<button class="btn-buy ${type==='shadow'?'shadow-btn':''}" onclick="buyBiz('${c.id}')" ${afford?'':'disabled'}>${lvl?'⬆️':'Купить'}</button>
-                <span class="business-cost">$${fmt(cost)}</span>${mgr}`}
+                <span class="business-cost">$${fmt(cost)}</span>${mgr}${skinBtn}`}
             </div></div>`;
     }
 }
@@ -333,6 +386,71 @@ function renderCharacter() {
     $('#char-nickname').textContent = S.character.nickname || 'Новичок';
     $('#char-level').textContent = S.playerLevel;
 
+    // ── Avatar (paper doll) ──
+    const avatarEl = $('#char-avatar');
+    if (avatarEl) {
+        const slotPositions = [
+            { key: 'hat', pos: 'hat', label: 'Шапка' },
+            { key: 'jacket', pos: 'jacket', label: 'Одежда' },
+            { key: 'accessory', pos: 'accessory', label: 'Аксессуар' },
+            { key: 'weapon', pos: 'weapon', label: 'Оружие' },
+            { key: 'car', pos: 'car', label: 'Тачка' },
+        ];
+        const defaultEmoji = { hat: '🎩', jacket: '🧥', accessory: '💍', weapon: '⚔️', car: '🚗' };
+        let avatarHtml = `<div class="char-avatar-figure"><svg viewBox="0 0 120 220" fill="white" xmlns="http://www.w3.org/2000/svg">
+            <!-- Head -->
+            <ellipse cx="60" cy="22" rx="15" ry="18"/>
+            <!-- Neck -->
+            <path d="M53 38 L53 46 L67 46 L67 38" />
+            <!-- Torso (suit jacket shape) -->
+            <path d="M38 46 L33 50 L30 90 L32 92 L44 92 L44 100 L76 100 L76 92 L88 92 L90 90 L87 50 L82 46 L67 46 L63 56 L57 56 L53 46 Z"/>
+            <!-- Suit lapels -->
+            <path d="M53 46 L57 56 L54 70 L48 50 Z" fill="rgba(255,255,255,0.15)"/>
+            <path d="M67 46 L63 56 L66 70 L72 50 Z" fill="rgba(255,255,255,0.15)"/>
+            <!-- Tie -->
+            <path d="M57 56 L60 80 L63 56 Z" fill="rgba(255,255,255,0.2)"/>
+            <!-- Belt -->
+            <rect x="42" y="97" width="36" height="5" rx="1" fill="rgba(255,255,255,0.15)"/>
+            <!-- Left arm -->
+            <path d="M38 46 L28 52 L18 78 L16 92 L22 94 L28 80 L30 68 L33 50 Z"/>
+            <!-- Left hand -->
+            <ellipse cx="19" cy="95" rx="5" ry="6"/>
+            <!-- Right arm -->
+            <path d="M82 46 L92 52 L102 78 L104 92 L98 94 L92 80 L90 68 L87 50 Z"/>
+            <!-- Right hand -->
+            <ellipse cx="101" cy="95" rx="5" ry="6"/>
+            <!-- Left leg -->
+            <path d="M44 100 L42 104 L38 160 L36 176 L34 184 L44 184 L46 178 L48 160 L52 104 L52 100 Z"/>
+            <!-- Right leg -->
+            <path d="M68 100 L68 104 L72 160 L74 178 L76 184 L86 184 L84 176 L82 160 L78 104 L76 100 Z"/>
+            <!-- Left shoe -->
+            <path d="M34 182 L28 186 L28 192 L46 192 L46 186 L44 182 Z"/>
+            <!-- Right shoe -->
+            <path d="M76 182 L74 186 L74 192 L92 192 L92 186 L86 182 Z"/>
+            <!-- Sunglasses -->
+            <rect x="48" y="16" width="10" height="7" rx="2" fill="rgba(0,0,0,0.3)"/>
+            <rect x="62" y="16" width="10" height="7" rx="2" fill="rgba(0,0,0,0.3)"/>
+            <line x1="58" y1="19" x2="62" y2="19" stroke="rgba(0,0,0,0.3)" stroke-width="1.5"/>
+        </svg></div>`;
+        for (const sp of slotPositions) {
+            const itemId = S.character[sp.key];
+            const item = itemId && itemId !== 'none' ? S.shopItems[itemId] : null;
+            if (item) {
+                const r = item.rarity || 'common';
+                avatarHtml += `<div class="char-avatar-slot equipped" data-pos="${sp.pos}" data-rarity="${r}">
+                    <span class="char-avatar-slot-icon">${item.emoji}</span>
+                    <span class="char-avatar-slot-label">${item.name}</span>
+                </div>`;
+            } else {
+                avatarHtml += `<div class="char-avatar-slot empty" data-pos="${sp.pos}">
+                    <span class="char-avatar-slot-icon">+</span>
+                    <span class="char-avatar-slot-label">${sp.label}</span>
+                </div>`;
+            }
+        }
+        avatarEl.innerHTML = avatarHtml;
+    }
+
     let eqHtml = '';
     let totalBonuses = { fear: 0, respect: 0, income: 0, suspicion_reduce: 0 };
 
@@ -393,6 +511,63 @@ function renderPrestige() {
         </div>`;
 }
 
+// ── Talent Tree ──
+function renderTalentTree() {
+    const el = $('#talent-tree-content');
+    const badge = $('#talent-points-badge');
+    if (!el || !badge) return;
+
+    const pts = S.talentPoints;
+    badge.textContent = pts > 0 ? `Очков таланта: ${pts}` : 'Нет очков таланта';
+    badge.style.color = pts > 0 ? 'var(--gold)' : 'var(--text2)';
+
+    if (!S.talentTreeCfg || !Object.keys(S.talentTreeCfg).length) {
+        el.innerHTML = '<div style="color:var(--text2);font-size:.8rem;text-align:center">Получай очки за престиж</div>';
+        return;
+    }
+
+    let html = '';
+    for (const [branchId, branch] of Object.entries(S.talentTreeCfg)) {
+        html += `<div class="talent-branch">
+            <div class="talent-branch-header"><span>${branch.emoji}</span> ${branch.name}</div>
+            <div class="talent-cards">`;
+        for (const t of branch.talents) {
+            const lvl = S.playerTalents[t.id] || 0;
+            const maxed = lvl >= t.max_level;
+            const canAssign = pts > 0 && !maxed;
+            let dots = '';
+            for (let i = 0; i < t.max_level; i++) {
+                dots += `<div class="talent-dot${i < lvl ? ' filled' : ''}"></div>`;
+            }
+            html += `<div class="talent-card${maxed ? ' maxed' : ''}">
+                <div class="talent-card-icon">${t.emoji}</div>
+                <div class="talent-card-info">
+                    <div class="talent-card-name">${t.name}</div>
+                    <div class="talent-card-desc">${t.description} (${lvl}/${t.max_level})</div>
+                </div>
+                <div class="talent-card-right">
+                    <div class="talent-dots">${dots}</div>
+                    <button class="btn-talent" onclick="assignTalent('${t.id}')" ${canAssign ? '' : 'disabled'}>+</button>
+                </div>
+            </div>`;
+        }
+        html += '</div></div>';
+    }
+    el.innerHTML = html;
+}
+
+async function assignTalent(talentId) {
+    try {
+        const r = await api('/api/talent/assign', { telegram_id: S.player.telegram_id, talent_id: talentId });
+        S.player = r.player;
+        S.playerTalents = r.player_talents;
+        S.talentPoints = r.talent_points;
+        renderTalentTree();
+        // Re-sync to pick up new income/suspicion
+        sync();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
 // ── Territories ──
 function renderTerritories() {
     const el = $('#territories-list');
@@ -443,27 +618,47 @@ function renderAchievements() {
         return;
     }
     const unlocked = {};
-    for (const a of S.achievements) {
-        unlocked[a.achievement_id] = a;
-    }
-    let html = '';
+    for (const a of S.achievements) unlocked[a.achievement_id] = a;
+
+    // Group by category
+    const groups = {};
     for (const ach of S.achievementsCfg) {
-        const u = unlocked[ach.id];
-        const isUnlocked = !!u;
-        const isClaimed = u && u.claimed;
-        html += `<div class="achievement-card ${isUnlocked ? 'achievement-unlocked' : 'achievement-locked'} ${isClaimed ? 'achievement-claimed' : ''}">
-            <div class="achievement-header">
-                <span class="achievement-emoji">${ach.emoji}</span>
-                <div class="achievement-info">
-                    <div class="achievement-name">${ach.name}</div>
-                    <div class="achievement-desc">${ach.description}</div>
+        const cat = ach.category || 'other';
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(ach);
+    }
+
+    let html = '';
+    for (const [catId, achs] of Object.entries(groups)) {
+        const catInfo = S.achievementCategories[catId] || { name: catId, emoji: '' };
+        const total = achs.length;
+        const done = achs.filter(a => unlocked[a.id]).length;
+        html += `<div class="ach-category">
+            <div class="ach-category-header">
+                <span>${catInfo.emoji} ${catInfo.name}</span>
+                <span class="ach-category-progress">${done}/${total}</span>
+            </div>`;
+        for (const ach of achs) {
+            const u = unlocked[ach.id];
+            const isUnlocked = !!u;
+            const isClaimed = u && u.claimed;
+            const tier = ach.tier || 'bronze';
+            const tierCfg = S.tierInfo[tier] || { color: '#cd7f32' };
+            html += `<div class="achievement-card ${isUnlocked ? 'achievement-unlocked' : 'achievement-locked'} ${isClaimed ? 'achievement-claimed' : ''}" style="border-left:3px solid ${tierCfg.color}">
+                <div class="achievement-header">
+                    <span class="achievement-emoji">${ach.emoji}</span>
+                    <div class="achievement-info">
+                        <div class="achievement-name">${ach.name} <span class="ach-tier" style="color:${tierCfg.color}">[${tier}]</span></div>
+                        <div class="achievement-desc">${ach.description}</div>
+                    </div>
+                    <div class="achievement-reward">$${fmt(ach.reward)}</div>
                 </div>
-                <div class="achievement-reward">$${fmt(ach.reward)}</div>
-            </div>
-            ${isClaimed ? '<div class="achievement-status">Получено</div>'
-            : isUnlocked ? `<button class="btn-buy" onclick="claimAchievement('${ach.id}')">Забрать</button>`
-            : ''}
-        </div>`;
+                ${isClaimed ? '<div class="achievement-status">Получено</div>'
+                : isUnlocked ? `<button class="btn-buy" onclick="claimAchievement('${ach.id}')">Забрать</button>`
+                : ''}
+            </div>`;
+        }
+        html += '</div>';
     }
     el.innerHTML = html;
 }
@@ -502,26 +697,8 @@ async function loadLeaderboard() {
 
 // ── Inventory ──
 function renderInventory() {
-    const casesEl = $('#inv-cases');
     const listEl = $('#inv-list');
-    if (!casesEl || !listEl) return;
-
-    // Render owned cases
-    if (S.playerCases.length === 0) {
-        casesEl.innerHTML = '<div class="inv-empty">Нет кейсов — купи в Магазине</div>';
-    } else {
-        let html = '';
-        for (const pc of S.playerCases) {
-            const cfg = S.casesCfg[pc.case_id];
-            if (!cfg) continue;
-            html += `<div class="inv-case-card" style="border-color:${rarityColor(cfg.rarity)}" onclick="openCaseAnim(${pc.id},'${pc.case_id}')">
-                <div class="inv-case-emoji">${cfg.emoji}</div>
-                <div class="inv-case-name">${cfg.name}</div>
-                <div class="inv-case-action">Открыть</div>
-            </div>`;
-        }
-        casesEl.innerHTML = html;
-    }
+    if (!listEl) return;
 
     // Render owned items
     const items = S.inventory.filter(i => S.shopItems[i.item_id]);
@@ -727,8 +904,8 @@ function renderMarketListings() {
 function renderGang() {
     const el = $('#gang-section');
     if (S.player.gang_id) {
-        el.innerHTML = `<div class="gang-info"><div class="gang-name">👥 Ты в банде #${S.player.gang_id}</div>
-            <div class="gang-stats">Скоро: список участников, банк банды, войны</div></div>`;
+        el.innerHTML = `<div class="gang-detail-loading">Загрузка банды...</div>`;
+        loadGangDetail(S.player.gang_id);
     } else {
         el.innerHTML = `<div class="gang-create">
             <p style="margin-bottom:8px;font-size:.85rem">Создай свою банду или вступи в существующую</p>
@@ -738,6 +915,105 @@ function renderGang() {
             <div id="gangs-list" style="margin-top:12px"></div>
             <button class="btn btn-primary" onclick="loadGangs()" style="width:100%;margin-top:8px;background:var(--blue)">Показать банды</button>
         </div>`;
+    }
+}
+
+async function loadGangDetail(gangId) {
+    const el = $('#gang-section');
+    try {
+        const r = await fetch(API + '/api/gang/' + gangId).then(r => r.json());
+        const g = r.gang;
+        const members = r.members || [];
+        const ups = r.gang_upgrades || {};
+        const upsCfg = r.gang_upgrades_config || {};
+        const log = r.gang_log || [];
+        const isLeader = g.leader_id === S.player.telegram_id;
+
+        // Gang info header
+        let html = `<div class="gang-header-card">
+            <div class="gang-header-top">
+                <div class="gang-header-info">
+                    <div class="gang-header-name">[${g.tag}] ${g.name}</div>
+                    <div class="gang-header-stats">
+                        👥 ${members.length}/${20} участников &nbsp;|&nbsp; ⚡ Сила: ${g.power}
+                    </div>
+                </div>
+            </div>
+            <div class="gang-bank-row">
+                <div class="gang-bank-label">🏦 Банк банды</div>
+                <div class="gang-bank-amount">$${fmt(g.cash_bank)}</div>
+            </div>
+            <div class="gang-bank-actions">
+                <input class="gang-input gang-bank-input" id="gang-bank-amount" type="number" placeholder="Сумма" min="1">
+                <button class="btn-gang-action btn-deposit" onclick="gangDeposit()">Внести</button>
+                ${isLeader ? `<button class="btn-gang-action btn-withdraw" onclick="gangWithdraw()">Снять</button>` : ''}
+            </div>
+        </div>`;
+
+        // Gang upgrades
+        html += `<div class="gang-upgrades-section">
+            <h3>⬆️ Улучшения банды</h3>
+            <div class="gang-upgrades-list">`;
+        for (const [uid, cfg] of Object.entries(upsCfg)) {
+            const lvl = ups[uid] || 0;
+            const maxed = lvl >= cfg.max_level;
+            const cost = maxed ? 0 : cfg.costs[lvl];
+            const currentBonus = lvl > 0 ? cfg.bonuses[lvl - 1] : 0;
+            const nextBonus = maxed ? currentBonus : cfg.bonuses[lvl];
+            const bonusSuffix = cfg.bonus_type === 'attack_power' ? '' : '%';
+            html += `<div class="gang-upgrade-card">
+                <div class="gang-upgrade-left">
+                    <span class="gang-upgrade-emoji">${cfg.emoji}</span>
+                    <div class="gang-upgrade-info">
+                        <div class="gang-upgrade-name">${cfg.name} ${lvl > 0 ? `<span class="gang-upgrade-lvl">Ур.${lvl}</span>` : ''}</div>
+                        <div class="gang-upgrade-desc">${cfg.description}</div>
+                        ${lvl > 0 ? `<div class="gang-upgrade-bonus">Сейчас: +${currentBonus}${bonusSuffix}</div>` : ''}
+                    </div>
+                </div>
+                <div class="gang-upgrade-right">
+                    ${maxed ? `<span class="gang-upgrade-max">MAX</span>`
+                    : isLeader ? `<button class="btn-gang-upgrade" onclick="gangUpgrade('${uid}')">
+                        ⬆️ $${fmt(cost)}
+                        <span class="gang-upgrade-next">→ +${nextBonus}${bonusSuffix}</span>
+                    </button>` : `<span class="gang-upgrade-cost">$${fmt(cost)}</span>`}
+                </div>
+            </div>`;
+        }
+        html += `</div></div>`;
+
+        // Members
+        html += `<div class="gang-members-section">
+            <h3>👥 Участники</h3>
+            <div class="gang-members-list">`;
+        for (const m of members) {
+            const isMe = m.telegram_id === S.player.telegram_id;
+            const roleIcon = m.role === 'leader' ? '👑' : '👤';
+            html += `<div class="gang-member-row ${isMe ? 'gang-member-me' : ''}">
+                <span class="gang-member-role">${roleIcon}</span>
+                <span class="gang-member-name">${m.username || 'Игрок'}</span>
+                ${isLeader && !isMe ? `<button class="btn-gang-kick" onclick="gangKick(${m.telegram_id})">Кикнуть</button>` : ''}
+            </div>`;
+        }
+        html += `</div></div>`;
+
+        // Activity log
+        if (log.length > 0) {
+            html += `<div class="gang-log-section">
+                <h3>📋 Журнал</h3>
+                <div class="gang-log-list">`;
+            for (const entry of log) {
+                html += `<div class="gang-log-entry">${entry.message}</div>`;
+            }
+            html += `</div></div>`;
+        }
+
+        // Leave button
+        html += `<button class="btn-gang-leave" onclick="gangLeave()">🚪 Покинуть банду</button>`;
+
+        el.innerHTML = html;
+    } catch(e) {
+        el.innerHTML = `<div class="gang-info"><div class="gang-name">👥 Ты в банде #${gangId}</div>
+            <div class="gang-stats">Ошибка загрузки</div></div>`;
     }
 }
 
@@ -790,6 +1066,7 @@ function shareRefLink() {
 async function buyBiz(id) {
     try {
         const r = await api('/api/buy', { telegram_id: S.player.telegram_id, business_id: id });
+        if (r.cash_before !== undefined) S.displayCash = r.cash_before;
         S.player = r.player; S.businesses = r.businesses; S.displayCash = r.player.cash;
         S.incomePerSec = r.income_per_sec; S.suspicionPerSec = r.suspicion_per_sec;
         S.playerLevel = r.player_level; renderAll();
@@ -806,6 +1083,7 @@ async function hireManager(id) {
 async function doRobbery(id) {
     try {
         const r = await api('/api/robbery', { telegram_id: S.player.telegram_id, robbery_id: id });
+        if (r.cash_before !== undefined) S.displayCash = r.cash_before;
         S.player = r.player; S.displayCash = r.player.cash;
         if (r.success) showPopup('💰', 'Успешно!', '', '+$' + fmt(r.reward), '🔥 Подозрение +' + r.suspicion_gain + '%');
         else showPopup('🚨', 'Провал!', 'Тебя заметили', '$0', '🔥 Подозрение +' + r.suspicion_gain + '%');
@@ -1277,7 +1555,7 @@ async function loadGangs() {
         if (!r.gangs.length) { el.innerHTML = '<p style="color:var(--text2);font-size:.8rem">Банд пока нет</p>'; return; }
         for (const g of r.gangs) {
             el.innerHTML += `<div class="gang-card">
-                <div><strong>[${g.tag}] ${g.name}</strong><br><small>${g.members || 1} чел.</small></div>
+                <div><strong>[${g.tag}] ${g.name}</strong><br><small>${g.members || 1} чел. | ⚡${g.power}</small></div>
                 <button class="btn-buy" onclick="joinGang(${g.id})">Вступить</button></div>`;
         }
     } catch(e) {}
@@ -1289,6 +1567,267 @@ async function joinGang(id) {
         S.player = r.player;
         showPopup('👥', 'Ты в банде!', '', '', '');
         renderAll();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+async function gangDeposit() {
+    const el = $('#gang-bank-amount');
+    if (!el) { showPopup('❌', 'Ошибка', '', 'Поле суммы не найдено', ''); return; }
+    const amount = parseFloat(el.value);
+    if (!amount || amount <= 0) { showPopup('❌', 'Ошибка', '', 'Введи сумму', ''); return; }
+    try {
+        const r = await api('/api/gang/deposit', { telegram_id: S.player.telegram_id, amount });
+        S.player = r.player; S.displayCash = r.player.cash;
+        showPopup('💰', 'Внесено в банк', '', '-$' + fmt(amount), '');
+        renderGang(); updateHUD();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || 'Не удалось внести', ''); }
+}
+
+async function gangWithdraw() {
+    const el = $('#gang-bank-amount');
+    if (!el) { showPopup('❌', 'Ошибка', '', 'Поле суммы не найдено', ''); return; }
+    const amount = parseFloat(el.value);
+    if (!amount || amount <= 0) { showPopup('❌', 'Ошибка', '', 'Введи сумму', ''); return; }
+    try {
+        const r = await api('/api/gang/withdraw', { telegram_id: S.player.telegram_id, amount });
+        S.player = r.player; S.displayCash = r.player.cash;
+        showPopup('💸', 'Снято из банка', '', '+$' + fmt(amount), '');
+        renderGang(); updateHUD();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || 'Не удалось снять', ''); }
+}
+
+async function gangUpgrade(upgradeId) {
+    try {
+        const r = await api('/api/gang/upgrade', { telegram_id: S.player.telegram_id, upgrade_id: upgradeId });
+        showPopup('⬆️', 'Улучшение куплено!', '', '', '');
+        renderGang();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || 'Не хватает денег в банке', ''); }
+}
+
+async function gangKick(targetId) {
+    if (!confirm('Кикнуть этого игрока из банды?')) return;
+    try {
+        await api('/api/gang/kick', { telegram_id: S.player.telegram_id, target_id: targetId });
+        showPopup('❌', 'Игрок кикнут', '', '', '');
+        renderGang();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+async function gangLeave() {
+    if (!confirm('Ты уверен? Ты покинешь банду. Если ты лидер — лидерство перейдёт следующему участнику.')) return;
+    try {
+        const r = await api('/api/gang/leave', { telegram_id: S.player.telegram_id });
+        S.player = r.player;
+        showPopup('🚪', 'Ты покинул банду', '', '', '');
+        renderAll();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+// ── Skins ──
+function showSkinEquip(businessId) {
+    const owned = S.playerSkins;
+    if (!owned.length) {
+        showPopup('🎨', 'Нет скинов', '', 'Купи кейс скинов в магазине', '');
+        return;
+    }
+    // Count skins
+    const skinCounts = {};
+    for (const sid of owned) { skinCounts[sid] = (skinCounts[sid] || 0) + 1; }
+    const uniqueSkins = Object.keys(skinCounts);
+
+    const currentSkin = S.equippedSkins[businessId] || '';
+    let gridHtml = `<div class="skin-equip-option ${!currentSkin ? 'equipped' : ''}" onclick="equipSkin('${businessId}','none')">
+        <div class="se-emoji">❌</div><div class="se-name">Снять</div></div>`;
+    for (const sid of uniqueSkins) {
+        const cfg = S.skinsCfg[sid];
+        if (!cfg) continue;
+        const r = S.skinRarities[cfg.rarity];
+        const isEquipped = currentSkin === sid;
+        gridHtml += `<div class="skin-equip-option ${isEquipped ? 'equipped' : ''}" onclick="equipSkin('${businessId}','${sid}')" style="border-color:${isEquipped ? r?.color||'#fff' : 'var(--border)'}">
+            <div class="se-emoji">${cfg.emoji}</div>
+            <div class="se-name" style="color:${r?.color||'#fff'}">${cfg.name}</div>
+        </div>`;
+    }
+    // Use popup overlay
+    $('#popup-icon').textContent = '🎨';
+    $('#popup-title').textContent = 'Выбери скин';
+    $('#popup-body').innerHTML = `<div class="skin-equip-grid">${gridHtml}</div>`;
+    $('#popup-amount').textContent = '';
+    $('#popup-sub').textContent = '';
+    $('#popup-sub').classList.add('hidden');
+    $('#popup-overlay').classList.remove('hidden');
+}
+
+async function equipSkin(businessId, skinId) {
+    try {
+        const r = await api('/api/skin/equip', { telegram_id: S.player.telegram_id, business_id: businessId, skin_id: skinId });
+        S.equippedSkins = r.equipped_skins;
+        closePopup();
+        renderBusiness('legal'); renderBusiness('shadow');
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+async function openSkinCase(caseType) {
+    try {
+        const overlay = $('#case-overlay');
+        const roulette = $('#case-roulette');
+        const result = $('#case-open-result');
+        const okBtn = $('#case-ok-btn');
+
+        result.classList.add('hidden');
+        result.classList.remove('case-result-appear');
+        okBtn.classList.add('hidden');
+        roulette.classList.remove('hidden');
+        overlay.classList.remove('hidden');
+
+        // Build skin roulette strip with random skins
+        const allSkins = Object.entries(S.skinsCfg);
+        const tempItems = [];
+        for (let i = 0; i < 60; i++) {
+            // Weighted random by rarity
+            const roll = Math.random();
+            let cum = 0;
+            let picked = allSkins[0];
+            for (const [sid, scfg] of allSkins) {
+                const rr = S.skinRarities[scfg.rarity];
+                cum += rr ? rr.chance : 0.2;
+                if (roll <= cum) { picked = [sid, scfg]; break; }
+            }
+            const [sid, scfg] = picked;
+            const rc = S.skinRarities[scfg.rarity] || {};
+            tempItems.push({ emoji: scfg.emoji, name: scfg.name, rarity: scfg.rarity, _color: rc.color || '#999' });
+        }
+        renderSkinRouletteStrip(tempItems);
+
+        // Fire API call
+        const apiPromise = api('/api/skin/open', { telegram_id: S.player.telegram_id, case_type: caseType });
+
+        await new Promise(r => setTimeout(r, 100));
+
+        let apiResult;
+        try {
+            apiResult = await apiPromise;
+        } catch(e) {
+            closeCaseOverlay();
+            showPopup('❌', 'Ошибка', '', e.detail || 'Нет кейсов', '');
+            return;
+        }
+
+        S.playerSkins = apiResult.player_skins;
+        S.playerCases = apiResult.player_cases || S.playerCases;
+        const skin = apiResult.skin;
+        const rarity = apiResult.rarity;
+
+        // Rebuild strip with winner at position 40
+        const winItem = { emoji: skin.emoji, name: skin.name, rarity: skin.rarity || 'common', _color: rarity.color || '#999' };
+        const stripItems = [];
+        for (let i = 0; i < 60; i++) {
+            const roll = Math.random();
+            let cum = 0;
+            let picked = allSkins[0];
+            for (const [sid, scfg] of allSkins) {
+                const rr = S.skinRarities[scfg.rarity];
+                cum += rr ? rr.chance : 0.2;
+                if (roll <= cum) { picked = [sid, scfg]; break; }
+            }
+            const [sid, scfg] = picked;
+            const rc = S.skinRarities[scfg.rarity] || {};
+            stripItems.push({ emoji: scfg.emoji, name: scfg.name, rarity: scfg.rarity, _color: rc.color || '#999' });
+        }
+        stripItems[40] = winItem;
+        renderSkinRouletteStrip(stripItems);
+
+        // Animate
+        await animateRoulette(40);
+        await new Promise(r => setTimeout(r, 800));
+
+        // Show result
+        roulette.classList.add('hidden');
+        $('#case-won-emoji').textContent = skin.emoji;
+        $('#case-won-name').textContent = skin.name;
+        $('#case-won-name').style.color = rarity.color;
+        $('#case-won-rarity').textContent = rarity.name;
+        $('#case-won-rarity').style.color = rarity.color;
+        $('#case-won-desc').textContent = '';
+
+        result.classList.remove('hidden');
+        result.classList.add('case-result-appear');
+        okBtn.classList.remove('hidden');
+
+        renderAll();
+    } catch(e) { closeCaseOverlay(); showPopup('❌', 'Ошибка', '', e.detail || 'Нет кейсов', ''); }
+}
+
+function renderSkinRouletteStrip(items) {
+    const strip = $('#case-roulette-strip');
+    strip.style.transition = 'none';
+    strip.style.transform = 'translateX(0)';
+    strip.innerHTML = items.map(it => {
+        const color = it._color || rarityColor(it.rarity || 'common');
+        return `<div class="case-roulette-item" style="background:${color}15">
+            <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:${color}"></div>
+            <span class="ri-emoji">${it.emoji || '❓'}</span>
+            <span class="ri-name" style="color:${color}">${it.name || '???'}</span>
+        </div>`;
+    }).join('');
+    void strip.offsetWidth;
+}
+
+async function openSkinCaseMass(count) {
+    try {
+        const r = await api('/api/skin/open', { telegram_id: S.player.telegram_id, case_type: 'normal', count });
+        S.playerSkins = r.player_skins;
+        S.playerCases = r.player_cases || S.playerCases;
+        const results = r.results || [];
+
+        // Sort: rarest first
+        const rarityOrder = { mythic: 0, legendary: 1, epic: 2, rare: 3, common: 4 };
+        results.sort((a, b) => (rarityOrder[a.skin?.rarity] ?? 5) - (rarityOrder[b.skin?.rarity] ?? 5));
+
+        // Show mass open overlay
+        const overlay = $('#case-overlay');
+        const roulette = $('#case-roulette');
+        const result = $('#case-open-result');
+        const okBtn = $('#case-ok-btn');
+        roulette.classList.add('hidden');
+        result.classList.add('hidden');
+        result.classList.remove('case-result-appear');
+        okBtn.classList.add('hidden');
+        overlay.classList.remove('hidden');
+
+        // Build mass results grid
+        let html = `<div class="mass-open-title">🎨 Открыто кейсов: ${results.length}</div><div class="mass-open-grid">`;
+        for (const item of results) {
+            const s = item.skin;
+            const rc = item.rarity;
+            const isLeg = s.rarity === 'legendary' || s.rarity === 'mythic';
+            html += `<div class="mass-open-card ${isLeg ? 'mass-open-glow' : ''}" style="border-color:${rc.color}">
+                <div class="mass-open-emoji">${s.emoji}</div>
+                <div class="mass-open-name" style="color:${rc.color}">${s.name}</div>
+                <div class="mass-open-rarity" style="color:${rc.color}">${rc.name}</div>
+            </div>`;
+        }
+        html += '</div>';
+
+        $('#case-won-emoji').textContent = '';
+        $('#case-won-name').innerHTML = html;
+        $('#case-won-name').style.color = '';
+        $('#case-won-rarity').textContent = '';
+        $('#case-won-desc').textContent = '';
+
+        result.classList.remove('hidden');
+        result.classList.add('case-result-appear');
+        okBtn.classList.remove('hidden');
+
+        renderAll();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || 'Нет кейсов', ''); }
+}
+
+async function buySkinCaseStars() {
+    try {
+        const r = await api('/api/stars/invoice', { telegram_id: S.player.telegram_id, package_id: 'skin_case' });
+        if (tg) tg.openInvoice(r.invoice_link);
+        else window.open(r.invoice_link);
     } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
 
@@ -1372,7 +1911,8 @@ async function doPrestige() {
         S.player = r.player; S.businesses = r.businesses; S.displayCash = r.player.cash;
         S.incomePerSec = r.income_per_sec; S.suspicionPerSec = r.suspicion_per_sec;
         S.playerLevel = r.player_level;
-        showPopup('⚡', 'Престиж!', `Уровень ${r.prestige_level}`, `Множитель: x${r.prestige_multiplier.toFixed(2)}`, 'Бизнесы сброшены');
+        S.talentPoints = r.talent_points || S.player.talent_points || 0;
+        showPopup('⚡', 'Престиж!', `Уровень ${r.prestige_level}`, `Множитель: x${r.prestige_multiplier.toFixed(2)}`, '+1 очко таланта!');
         renderAll();
     } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
@@ -1444,6 +1984,7 @@ function switchDelaSubTab(section, btn) {
     btn.classList.add('active');
     $('#dela-robberies').classList.toggle('hidden', section !== 'robberies');
     $('#dela-missions').classList.toggle('hidden', section !== 'missions');
+    $('#dela-quests').classList.toggle('hidden', section !== 'quests');
 }
 
 function switchCharSubTab(section, btn) {
@@ -1459,8 +2000,12 @@ function switchGangSubTab(section, btn) {
     $('#gang-main').classList.toggle('hidden', section !== 'gang-main');
     $('#gang-territories').classList.toggle('hidden', section !== 'gang-territories');
     $('#gang-pvp').classList.toggle('hidden', section !== 'gang-pvp');
+    $('#gang-tournament').classList.toggle('hidden', section !== 'gang-tournament');
+    $('#gang-boss').classList.toggle('hidden', section !== 'gang-boss');
     $('#gang-leaderboard').classList.toggle('hidden', section !== 'gang-leaderboard');
     if (section === 'gang-leaderboard') loadLeaderboard();
+    if (section === 'gang-tournament') loadTournamentLeaderboard();
+    if (section === 'gang-boss') loadBossData();
 }
 
 // ── Popup ──
@@ -1570,6 +2115,58 @@ function renderVipShop() {
             <button class="btn-vip-daily ${claimed ? 'disabled' : ''}" onclick="claimVipDailyCase()" ${claimed ? 'disabled' : ''}>
                 🎁 ${claimed ? 'Кейс получен сегодня' : 'Забрать бесплатный премиум кейс'}
             </button>
+        </div>`;
+        // VIP Daily SKIN Case
+        const skinClaimed = S.player.last_vip_skin_claim === new Date().toISOString().split('T')[0];
+        html += `<div class="vip-daily-case">
+            <button class="btn-vip-daily ${skinClaimed ? 'disabled' : ''}" onclick="openSkinCase('vip')" ${skinClaimed ? 'disabled' : ''} style="${!skinClaimed ? 'background:linear-gradient(135deg,var(--purple),var(--gold))' : ''}">
+                🎨 ${skinClaimed ? 'VIP скин получен сегодня' : 'Открыть VIP кейс скинов (повышенный шанс!)'}
+            </button>
+        </div>`;
+    }
+
+    // Skin Case Purchase
+    html += `<h3 class="vip-section-title">🎨 Кейс скинов</h3>
+    <div class="skin-case-section">
+        <div class="skin-case-card">
+            <div class="skin-case-emoji">🎨</div>
+            <div class="skin-case-name">Кейс скинов</div>
+            <div class="skin-case-desc">Скин для бизнеса — меняет внешний вид карточки. 15 скинов, 5 редкостей!</div>
+            <div class="skin-case-buttons">
+                <button class="btn-stars" onclick="buySkinCaseStars()">⭐ ${S.skinCase.stars_price || 50}</button>
+            </div>
+        </div>
+    </div>`;
+
+    // My Skins inventory
+    if (S.playerSkins.length > 0) {
+        const skinCounts = {};
+        for (const sid of S.playerSkins) skinCounts[sid] = (skinCounts[sid] || 0) + 1;
+        html += '<h3 class="vip-section-title">🎨 Мои скины</h3><div class="skin-inv-list">';
+        for (const [sid, count] of Object.entries(skinCounts)) {
+            const cfg = S.skinsCfg[sid];
+            if (!cfg) continue;
+            const r = S.skinRarities[cfg.rarity];
+            html += `<div class="skin-inv-card" style="border-color:${r?.color||'#333'}">
+                <div class="skin-inv-emoji">${cfg.emoji}</div>
+                <div class="skin-inv-name" style="color:${r?.color||'#fff'}">${cfg.name}</div>
+                <div class="skin-inv-rarity" style="color:${r?.color||'#999'}">${r?.name||cfg.rarity}</div>
+                <div class="skin-inv-count">x${count}</div>
+            </div>`;
+        }
+        html += '</div>';
+    }
+
+    // Skin Cases owned
+    const skinCasesOwned = S.playerCases.filter(c => c.case_id === 'skin_case');
+    if (skinCasesOwned.length > 0) {
+        html += `<div class="skin-open-section">
+            <div class="skin-open-title">🎨 Кейсы скинов: ${skinCasesOwned.length} шт.</div>
+            <div class="skin-open-buttons">
+                <button class="btn-skin-open" onclick="openSkinCase('normal')">Открыть x1</button>
+                ${skinCasesOwned.length >= 10 ? `<button class="btn-skin-open btn-skin-open-mass" onclick="openSkinCaseMass(10)">Открыть x10</button>` : ''}
+                ${skinCasesOwned.length > 1 ? `<button class="btn-skin-open btn-skin-open-all" onclick="openSkinCaseMass(${Math.min(skinCasesOwned.length, 50)})">Открыть все (${Math.min(skinCasesOwned.length, 50)})</button>` : ''}
+            </div>
         </div>`;
     }
 
@@ -1724,6 +2321,247 @@ async function claimVipItem(itemId) {
         showPopup('👑', 'VIP-предмет получен!', r.item?.name || '', '', '');
         renderAll();
     } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+// ── Tournament ──
+function renderTournament() {
+    const el = $('#tournament-my-score');
+    if (!el) return;
+    el.innerHTML = `<div class="tournament-score-card">
+        <div class="tournament-score-label">Мои очки сегодня</div>
+        <div class="tournament-score-value">${S.tournamentScore}</div>
+    </div>`;
+}
+
+async function loadTournamentLeaderboard() {
+    const el = $('#tournament-leaderboard');
+    if (!el) return;
+    el.innerHTML = '<div class="inv-empty">Загрузка...</div>';
+    try {
+        const r = await fetch(API + '/api/tournament/leaderboard').then(r => r.json());
+        const medals = ['🥇', '🥈', '🥉'];
+        let html = '';
+        if (!r.leaderboard.length) {
+            html = '<div class="inv-empty">Пока нет участников</div>';
+        } else {
+            for (let i = 0; i < r.leaderboard.length; i++) {
+                const p = r.leaderboard[i];
+                const isMe = S.player && p.telegram_id === S.player.telegram_id;
+                const medal = i < 3 ? medals[i] : `#${i + 1}`;
+                const prize = r.prizes[i] ? `$${fmt(r.prizes[i].cash)}` : '';
+                html += `<div class="lb-row ${isMe ? 'lb-me' : ''}">
+                    <span class="lb-rank">${medal}</span>
+                    <div class="lb-info">
+                        <div class="lb-name">${p.username || 'Игрок'}</div>
+                        <div class="lb-stats">${prize ? 'Приз: ' + prize : ''}</div>
+                    </div>
+                    <div class="lb-cash">${p.score} очк.</div>
+                </div>`;
+            }
+        }
+        el.innerHTML = html;
+
+        // Show prizes info
+        const prizesEl = $('#tournament-prizes-info');
+        if (prizesEl && r.prizes) {
+            let ph = '<div class="tournament-prizes-title">Призовой фонд:</div>';
+            r.prizes.forEach((p, i) => {
+                ph += `<div class="tournament-prize-row">${i < 3 ? medals[i] : '#' + (i + 1)} — $${fmt(p.cash)}${p.cases ? ' + ' + p.cases + ' кейс' : ''}</div>`;
+            });
+            prizesEl.innerHTML = ph;
+        }
+    } catch (e) { el.innerHTML = '<div class="inv-empty">Ошибка загрузки</div>'; }
+}
+
+// ── Quests ──
+function renderQuests() {
+    const el = $('#quests-list');
+    if (!el) return;
+    if (!S.questLines.length) {
+        el.innerHTML = '<div class="inv-empty">Квестов пока нет</div>';
+        return;
+    }
+    let html = '';
+    for (const ql of S.questLines) {
+        const pq = S.playerQuests.find(q => q.quest_id === ql.id);
+        const isLocked = !pq;
+        const isCompleted = pq && pq.completed;
+        const currentStep = pq ? pq.current_step : 0;
+        const stepProgress = pq ? pq.step_progress : 0;
+
+        html += `<div class="quest-line-card ${isLocked ? 'quest-locked' : ''} ${isCompleted ? 'quest-completed' : ''}">
+            <div class="quest-line-header">
+                <span class="quest-line-emoji">${ql.emoji}</span>
+                <div class="quest-line-info">
+                    <div class="quest-line-name">${ql.name}</div>
+                    <div class="quest-line-desc">${isLocked ? 'Нужен ур. ' + ql.unlock_level : isCompleted ? 'Завершено!' : 'Шаг ' + (currentStep + 1) + '/' + ql.steps.length}</div>
+                </div>
+            </div>`;
+
+        if (!isLocked) {
+            html += '<div class="quest-steps">';
+            for (let i = 0; i < ql.steps.length; i++) {
+                const step = ql.steps[i];
+                const isDone = i < currentStep;
+                const isCurrent = i === currentStep && !isCompleted;
+                const progress = isCurrent ? stepProgress : isDone ? step.target : 0;
+                const pct = Math.min(100, Math.round(progress / step.target * 100));
+                html += `<div class="quest-step ${isDone ? 'quest-step-done' : ''} ${isCurrent ? 'quest-step-current' : ''}">
+                    <div class="quest-step-marker">${isDone ? '✅' : isCurrent ? '▶️' : '⬜'}</div>
+                    <div class="quest-step-body">
+                        <div class="quest-step-desc">${step.description}</div>
+                        ${isCurrent ? `<div class="quest-step-bar"><div class="quest-step-fill" style="width:${pct}%"></div></div>
+                        <div class="quest-step-progress">${progress}/${step.target}</div>` : ''}
+                        <div class="quest-step-reward">${step.reward_type === 'cash' ? '$' + fmt(step.reward_amount) : '📦 ' + step.reward_amount}</div>
+                    </div>
+                </div>`;
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+    }
+    el.innerHTML = html;
+}
+
+// ── Event Banner ──
+function renderEventBanner() {
+    const banner = $('#event-banner');
+    if (!banner) return;
+    if (!S.activeEvent) { banner.classList.add('hidden'); return; }
+
+    banner.classList.remove('hidden');
+    $('#event-banner-emoji').textContent = S.activeEvent.emoji;
+    $('#event-banner-name').textContent = S.activeEvent.name;
+
+    const progress = S.eventProgress ? S.eventProgress.progress : 0;
+    const milestones = S.activeEvent.milestones || [];
+    const maxScore = milestones.length ? milestones[milestones.length - 1].target : 100;
+    const pct = Math.min(100, Math.round(progress / maxScore * 100));
+    $('#event-banner-bar').style.width = pct + '%';
+    $('#event-banner-score').textContent = progress + '/' + maxScore;
+
+    // Make banner clickable to show full event
+    banner.onclick = () => showEventPopup();
+}
+
+function showEventPopup() {
+    if (!S.activeEvent) return;
+    const ev = S.activeEvent;
+    const progress = S.eventProgress ? S.eventProgress.progress : 0;
+    const claimedStr = S.eventProgress ? S.eventProgress.rewards_claimed || '' : '';
+    const claimed = new Set(claimedStr.split(',').filter(x => x));
+
+    let body = `<div class="event-popup-info">${ev.description}</div>`;
+    // Bonuses
+    const bonuses = ev.bonuses || {};
+    if (bonuses.income_multiplier && bonuses.income_multiplier > 1) body += `<div class="event-bonus">💰 Доход x${bonuses.income_multiplier}</div>`;
+    if (bonuses.robbery_multiplier && bonuses.robbery_multiplier > 1) body += `<div class="event-bonus">🔫 Ограбления x${bonuses.robbery_multiplier}</div>`;
+    if (bonuses.casino_multiplier && bonuses.casino_multiplier > 1) body += `<div class="event-bonus">🎰 Казино x${bonuses.casino_multiplier}</div>`;
+
+    body += '<div class="event-milestones">';
+    (ev.milestones || []).forEach((ms, i) => {
+        const done = progress >= ms.target;
+        const isClaimed = claimed.has(String(i));
+        body += `<div class="event-ms-row ${done ? 'event-ms-done' : ''}">
+            <span class="event-ms-score">${ms.target} очк.</span>
+            <span class="event-ms-reward">${ms.label}</span>
+            ${done && !isClaimed ? `<button class="btn-buy btn-sm" onclick="claimEventMilestone(${i})">Забрать</button>` : ''}
+            ${isClaimed ? '<span class="event-ms-claimed">✅</span>' : ''}
+        </div>`;
+    });
+    body += '</div>';
+
+    $('#popup-icon').textContent = ev.emoji;
+    $('#popup-title').textContent = ev.name;
+    $('#popup-body').innerHTML = body;
+    $('#popup-amount').textContent = `Прогресс: ${progress}`;
+    $('#popup-sub').textContent = '';
+    $('#popup-sub').classList.add('hidden');
+    $('#popup-overlay').classList.remove('hidden');
+}
+
+async function claimEventMilestone(index) {
+    try {
+        const r = await api('/api/event/claim', { telegram_id: S.player.telegram_id, milestone_index: index });
+        S.player = r.player;
+        S.displayCash = r.player.cash;
+        S.eventProgress = r.event_progress;
+        closePopup();
+        showPopup('🎁', 'Награда получена!', '', '', '');
+        renderAll();
+    } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+// ── Boss ──
+function renderBoss() {
+    const el = $('#boss-section');
+    if (!el) return;
+    if (!S.player || !S.player.gang_id) {
+        el.innerHTML = '<div class="inv-empty">Вступите в банду, чтобы видеть босса</div>';
+        return;
+    }
+    if (!S.bossData) {
+        el.innerHTML = '<div class="inv-empty">Нет активного босса</div>';
+        return;
+    }
+    const b = S.bossData;
+    const hpPct = Math.max(0, Math.round(b.current_health / b.max_health * 100));
+    const hpColor = hpPct > 50 ? 'var(--green)' : hpPct > 20 ? 'var(--gold)' : 'var(--red)';
+
+    let html = `<div class="boss-card">
+        <div class="boss-header">
+            <span class="boss-emoji">${b.emoji || '👹'}</span>
+            <div class="boss-info">
+                <div class="boss-name">${b.name || b.boss_id}</div>
+                <div class="boss-reward">Награда: $${fmt(b.reward_pool || 0)}</div>
+            </div>
+        </div>
+        <div class="boss-hp-label">HP: ${fmt(b.current_health)} / ${fmt(b.max_health)}</div>
+        <div class="boss-hp-track">
+            <div class="boss-hp-fill" style="width:${hpPct}%;background:${hpColor}"></div>
+        </div>
+        <button class="btn btn-primary boss-attack-btn" onclick="attackBoss()" style="width:100%;margin-top:10px">⚔️ Атаковать</button>
+    </div>`;
+
+    // Attackers table
+    if (b.attackers && b.attackers.length) {
+        html += '<div class="boss-attackers"><div class="boss-attackers-title">Урон участников:</div>';
+        b.attackers.forEach((a, i) => {
+            const isMe = S.player && a.telegram_id === S.player.telegram_id;
+            html += `<div class="boss-atk-row ${isMe ? 'lb-me' : ''}">
+                <span class="boss-atk-rank">#${i + 1}</span>
+                <span class="boss-atk-name">${a.username || 'Игрок'}</span>
+                <span class="boss-atk-dmg">${fmt(a.total_dmg)} урона</span>
+            </div>`;
+        });
+        html += '</div>';
+    }
+    el.innerHTML = html;
+}
+
+async function loadBossData() {
+    if (!S.player || !S.player.gang_id) return;
+    try {
+        const r = await fetch(API + '/api/boss/' + S.player.gang_id).then(r => r.json());
+        S.bossData = r.boss_data;
+        renderBoss();
+    } catch (e) {}
+}
+
+async function attackBoss() {
+    if (!S.player || !S.player.gang_id) return;
+    try {
+        const r = await api('/api/boss/attack', { telegram_id: S.player.telegram_id, gang_id: S.player.gang_id });
+        S.player = r.player;
+        S.displayCash = r.player.cash;
+        S.bossData = r.boss_data;
+        if (r.rewards && r.rewards.boss_defeated) {
+            showPopup('💀', 'Босс повержен!', 'Награды распределены по урону', '', '');
+        } else {
+            showPopup('⚔️', 'Удар!', '', `Урон: ${r.damage}`, '');
+        }
+        renderBoss();
+    } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
 
 document.addEventListener('DOMContentLoaded', init);

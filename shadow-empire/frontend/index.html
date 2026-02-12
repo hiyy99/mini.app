@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Shadow Empire</title>
-    <link rel="stylesheet" href="css/style.css?v=8">
+    <link rel="stylesheet" href="css/style.css?v=18">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
@@ -57,6 +57,20 @@
     </div>
 
     <div id="game" class="hidden">
+        <!-- Event Banner -->
+        <div id="event-banner" class="event-banner hidden">
+            <div class="event-banner-left">
+                <span id="event-banner-emoji" class="event-banner-emoji"></span>
+                <span id="event-banner-name" class="event-banner-name"></span>
+            </div>
+            <div class="event-banner-right">
+                <div class="event-banner-progress-wrap">
+                    <div id="event-banner-bar" class="event-banner-bar"></div>
+                </div>
+                <span id="event-banner-score" class="event-banner-score"></span>
+            </div>
+        </div>
+
         <!-- Top bar -->
         <div class="top-bar">
             <div class="cash-display">
@@ -241,6 +255,7 @@
                 <div class="sub-tabs">
                     <button class="sub-tab active" onclick="switchDelaSubTab('robberies',this)">🔫 Ограбления</button>
                     <button class="sub-tab" onclick="switchDelaSubTab('missions',this)">📋 Миссии</button>
+                    <button class="sub-tab" onclick="switchDelaSubTab('quests',this)">📜 Квесты</button>
                 </div>
                 <div id="dela-robberies">
                     <div class="tab-header"><h2>🔫 Тёмные дела</h2><p>Быстрые деньги, высокий риск</p></div>
@@ -249,6 +264,10 @@
                 <div id="dela-missions" class="hidden">
                     <div class="tab-header"><h2>📋 Ежедневные миссии</h2><p>Выполняй задания — получай награды</p></div>
                     <div id="missions-list" class="missions-list"></div>
+                </div>
+                <div id="dela-quests" class="hidden">
+                    <div class="tab-header"><h2>📜 Квестовые линии</h2><p>Проходи сюжет — получай награды</p></div>
+                    <div id="quests-list" class="quests-list"></div>
                 </div>
             </div>
 
@@ -302,6 +321,7 @@
                             <div class="char-card-name"><span id="char-vip-badge" class="char-vip-badge hidden">👑 </span><span id="char-nickname">Новичок</span></div>
                             <div class="char-card-level">Ур. <span id="char-level">0</span></div>
                         </div>
+                        <div class="char-avatar" id="char-avatar"></div>
                         <div class="char-equipment" id="char-equipment"></div>
                         <div class="char-bonuses" id="char-bonuses"></div>
                     </div>
@@ -310,10 +330,15 @@
                         <h3>⚡ Престиж</h3>
                         <div id="prestige-info"></div>
                     </div>
+                    <!-- Talent Tree -->
+                    <div class="talent-tree-section" id="talent-tree-section">
+                        <h3>🌳 Древо Талантов</h3>
+                        <div class="talent-points-badge" id="talent-points-badge"></div>
+                        <div id="talent-tree-content"></div>
+                    </div>
                     <!-- Inventory -->
                     <div class="inv-section">
                         <h3>🎒 Инвентарь</h3>
-                        <div id="inv-cases" class="inv-cases-row"></div>
                         <div id="inv-list" class="inv-list"></div>
                     </div>
                     <!-- My market listings -->
@@ -334,7 +359,9 @@
                     <button class="sub-tab active" onclick="switchGangSubTab('gang-main',this)">👥 Банда</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-territories',this)">🗺 Территории</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-pvp',this)">⚔️ PvP</button>
-                    <button class="sub-tab" onclick="switchGangSubTab('gang-leaderboard',this)">🏆 Рейтинг</button>
+                    <button class="sub-tab" onclick="switchGangSubTab('gang-tournament',this)">🏆 Турнир</button>
+                    <button class="sub-tab" onclick="switchGangSubTab('gang-boss',this)">👹 Босс</button>
+                    <button class="sub-tab" onclick="switchGangSubTab('gang-leaderboard',this)">📊 Рейтинг</button>
                 </div>
                 <div id="gang-main">
                     <div class="tab-header"><h2>👥 Банда</h2><p>Объединяйся и воюй</p></div>
@@ -351,8 +378,18 @@
                     <div id="pvp-targets"></div>
                     <button class="btn btn-primary" onclick="loadPvpTargets()" style="margin-top:10px;width:100%">Найти жертву</button>
                 </div>
+                <div id="gang-tournament" class="hidden">
+                    <div class="tab-header"><h2>🏆 Ежедневный турнир</h2><p>Зарабатывай очки — попадай в топ</p></div>
+                    <div id="tournament-my-score" class="tournament-my-score"></div>
+                    <div id="tournament-leaderboard" class="tournament-leaderboard"></div>
+                    <div id="tournament-prizes-info" class="tournament-prizes-info"></div>
+                </div>
+                <div id="gang-boss" class="hidden">
+                    <div class="tab-header"><h2>👹 Босс банды</h2><p>Атакуйте вместе — получайте добычу</p></div>
+                    <div id="boss-section"></div>
+                </div>
                 <div id="gang-leaderboard" class="hidden">
-                    <div class="tab-header"><h2>🏆 Рейтинг</h2><p>Топ-20 игроков по заработку</p></div>
+                    <div class="tab-header"><h2>📊 Рейтинг</h2><p>Топ-20 игроков по заработку</p></div>
                     <div id="leaderboard-list" class="leaderboard-list"></div>
                 </div>
             </div>
@@ -369,6 +406,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=8"></script>
+    <script src="js/app.js?v=18"></script>
 </body>
 </html>

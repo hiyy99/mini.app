@@ -87,6 +87,119 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .manager-badge{font-size:.65rem;color:var(--blue);font-weight:600}
 .locked-text{font-size:.7rem;color:var(--muted);font-style:italic}
 
+/* ═══════ Business Skins ═══════ */
+.skin-badge{font-size:.55rem;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:4px}
+
+/* Common */
+.business-card.skin-midnight{border-color:#1a3a5c;background:linear-gradient(135deg,rgba(26,58,92,.15),rgba(10,30,60,.08));box-shadow:0 0 10px rgba(26,58,92,.2)}
+.business-card.skin-midnight .business-name{color:#5b9bd5}
+
+.business-card.skin-forest{border-color:#2d5a27;background:linear-gradient(135deg,rgba(45,90,39,.12),rgba(20,60,15,.06));box-shadow:0 0 10px rgba(45,90,39,.2)}
+.business-card.skin-forest .business-name{color:#6abf69}
+
+.business-card.skin-smoke{border-color:#666;background:linear-gradient(135deg,rgba(120,120,120,.1),rgba(80,80,80,.05));box-shadow:0 0 10px rgba(150,150,150,.15)}
+.business-card.skin-smoke .business-name{color:#b0b0b0}
+
+.business-card.skin-rust{border-color:#8b4513;background:linear-gradient(135deg,rgba(139,69,19,.12),rgba(100,50,10,.06));box-shadow:0 0 10px rgba(139,69,19,.2)}
+.business-card.skin-rust .business-name{color:#cd853f}
+
+.business-card.skin-ocean{border-color:#006994;background:linear-gradient(135deg,rgba(0,105,148,.1),rgba(0,60,100,.05));box-shadow:0 0 10px rgba(0,105,148,.2)}
+.business-card.skin-ocean .business-name{color:#00bcd4}
+
+/* Rare */
+.business-card.skin-neon{border-color:#0ff;background:linear-gradient(135deg,rgba(0,255,255,.06),rgba(0,150,255,.04));box-shadow:0 0 14px rgba(0,255,255,.2),inset 0 0 20px rgba(0,255,255,.03)}
+.business-card.skin-neon .business-emoji{background:rgba(0,255,255,.1);box-shadow:0 0 8px rgba(0,255,255,.25)}
+.business-card.skin-neon .business-name{color:#0ff}
+
+.business-card.skin-retro{border-color:#ff6b35;background:linear-gradient(135deg,rgba(255,107,53,.07),rgba(255,69,0,.04));box-shadow:0 0 14px rgba(255,107,53,.18),inset 0 0 20px rgba(255,107,53,.03)}
+.business-card.skin-retro .business-emoji{background:rgba(255,107,53,.1);box-shadow:0 0 8px rgba(255,107,53,.25)}
+.business-card.skin-retro .business-name{color:#ff6b35}
+
+.business-card.skin-arctic{border-color:#a0d2db;background:linear-gradient(135deg,rgba(160,210,219,.08),rgba(100,180,200,.04));box-shadow:0 0 14px rgba(160,210,219,.2),inset 0 0 20px rgba(160,210,219,.03)}
+.business-card.skin-arctic .business-emoji{background:rgba(160,210,219,.1);box-shadow:0 0 8px rgba(160,210,219,.25)}
+.business-card.skin-arctic .business-name{color:#a0d2db}
+
+.business-card.skin-crimson{border-color:#8b0000;background:linear-gradient(135deg,rgba(139,0,0,.1),rgba(100,0,0,.05));box-shadow:0 0 14px rgba(200,0,0,.15),inset 0 0 20px rgba(139,0,0,.03)}
+.business-card.skin-crimson .business-emoji{background:rgba(139,0,0,.12);box-shadow:0 0 8px rgba(200,0,0,.2)}
+.business-card.skin-crimson .business-name{color:#ff4444}
+
+/* Epic */
+.business-card.skin-gold{border-color:#ffd700;background:linear-gradient(135deg,rgba(255,215,0,.08),rgba(255,165,0,.04));box-shadow:0 0 16px rgba(255,215,0,.2),inset 0 0 25px rgba(255,215,0,.04)}
+.business-card.skin-gold .business-emoji{background:rgba(255,215,0,.12);box-shadow:0 0 10px rgba(255,215,0,.3)}
+.business-card.skin-gold .business-name{color:#ffd700}
+
+.business-card.skin-cyber{border-color:#f0f;background:linear-gradient(135deg,rgba(255,0,255,.07),rgba(128,0,255,.04));box-shadow:0 0 16px rgba(255,0,255,.18),inset 0 0 25px rgba(255,0,255,.03)}
+.business-card.skin-cyber .business-emoji{background:rgba(255,0,255,.1);box-shadow:0 0 10px rgba(255,0,255,.3)}
+.business-card.skin-cyber .business-name{color:#f0f}
+
+.business-card.skin-toxic{border-color:#39ff14;background:linear-gradient(135deg,rgba(57,255,20,.06),rgba(0,200,0,.03));box-shadow:0 0 16px rgba(57,255,20,.18),inset 0 0 25px rgba(57,255,20,.03)}
+.business-card.skin-toxic .business-emoji{background:rgba(57,255,20,.1);box-shadow:0 0 10px rgba(57,255,20,.3)}
+.business-card.skin-toxic .business-name{color:#39ff14}
+
+/* Legendary */
+.business-card.skin-dragon{border-color:#ff4500;background:linear-gradient(135deg,rgba(255,69,0,.1),rgba(255,215,0,.05));box-shadow:0 0 20px rgba(255,69,0,.25),inset 0 0 30px rgba(255,215,0,.04);animation:skinPulse 3s infinite}
+.business-card.skin-dragon .business-emoji{background:rgba(255,69,0,.15);box-shadow:0 0 12px rgba(255,69,0,.4)}
+.business-card.skin-dragon .business-name{color:#ff6347;text-shadow:0 0 6px rgba(255,69,0,.4)}
+
+.business-card.skin-void{border-color:#4b0082;background:linear-gradient(135deg,rgba(75,0,130,.12),rgba(0,0,0,.1));box-shadow:0 0 20px rgba(75,0,130,.25),inset 0 0 30px rgba(75,0,130,.05);animation:skinPulse 3s infinite}
+.business-card.skin-void .business-emoji{background:rgba(75,0,130,.2);box-shadow:0 0 12px rgba(75,0,130,.4)}
+.business-card.skin-void .business-name{color:#9370db;text-shadow:0 0 6px rgba(147,112,219,.4)}
+
+/* Mythic */
+.business-card.skin-shadowlord{border-color:#e74c3c;background:linear-gradient(135deg,rgba(231,76,60,.1),rgba(192,57,43,.06),rgba(0,0,0,.1));box-shadow:0 0 24px rgba(231,76,60,.3),0 0 48px rgba(231,76,60,.1);animation:skinPulseMythic 2s infinite}
+.business-card.skin-shadowlord .business-emoji{background:rgba(231,76,60,.15);box-shadow:0 0 14px rgba(231,76,60,.5)}
+.business-card.skin-shadowlord .business-name{color:#e74c3c;text-shadow:0 0 8px rgba(231,76,60,.5)}
+
+@keyframes skinPulse{0%,100%{opacity:1}50%{opacity:.92}}
+@keyframes skinPulseMythic{0%,100%{box-shadow:0 0 24px rgba(231,76,60,.3),0 0 48px rgba(231,76,60,.1)}50%{box-shadow:0 0 30px rgba(231,76,60,.45),0 0 60px rgba(231,76,60,.15)}}
+
+/* Skin inventory & equip UI */
+.skin-inv-section{margin-top:16px}
+.skin-inv-section h3{font-size:.95rem;margin-bottom:10px}
+.skin-inv-list{display:flex;flex-wrap:wrap;gap:8px}
+.skin-inv-card{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:10px;width:calc(50% - 4px);text-align:center;cursor:pointer;transition:all .2s}
+.skin-inv-card:active{transform:scale(.96)}
+.skin-inv-card.skin-selected{border-color:var(--gold)}
+.skin-inv-emoji{font-size:1.8rem;margin-bottom:4px}
+.skin-inv-name{font-size:.78rem;font-weight:700;margin-bottom:2px}
+.skin-inv-rarity{font-size:.6rem;font-weight:600}
+.skin-inv-count{font-size:.6rem;color:var(--text2);margin-top:2px}
+
+.skin-case-section{margin-bottom:14px}
+.skin-case-card{background:var(--card);border:2px solid var(--border);border-radius:14px;padding:16px;text-align:center}
+.skin-case-emoji{font-size:3rem;margin-bottom:8px}
+.skin-case-name{font-size:1rem;font-weight:800;margin-bottom:4px}
+.skin-case-desc{font-size:.75rem;color:var(--text2);margin-bottom:12px}
+.skin-case-buttons{display:flex;gap:8px;justify-content:center}
+
+/* Skin equip popup */
+.skin-equip-grid{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;max-height:200px;overflow-y:auto}
+.skin-equip-option{background:var(--bg);border:2px solid var(--border);border-radius:8px;padding:8px;text-align:center;cursor:pointer;min-width:70px;transition:all .2s}
+.skin-equip-option:active{transform:scale(.95)}
+.skin-equip-option.equipped{border-color:var(--gold)}
+.skin-equip-option .se-emoji{font-size:1.4rem}
+.skin-equip-option .se-name{font-size:.6rem;font-weight:600;margin-top:2px}
+
+/* Skin open buttons */
+.skin-open-section{margin-top:12px;background:var(--card);border:2px solid var(--border);border-radius:14px;padding:14px;text-align:center}
+.skin-open-title{font-size:.9rem;font-weight:700;margin-bottom:10px;color:var(--text)}
+.skin-open-buttons{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.btn-skin-open{padding:10px 18px;border:none;border-radius:10px;font-weight:700;font-size:.82rem;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--blue),var(--purple));transition:all .2s}
+.btn-skin-open:active{transform:scale(.95)}
+.btn-skin-open-mass{background:linear-gradient(135deg,var(--purple),var(--gold))}
+.btn-skin-open-all{background:linear-gradient(135deg,var(--gold),var(--red))}
+
+/* Mass open results */
+.mass-open-title{font-size:1.1rem;font-weight:800;margin-bottom:14px;text-align:center;color:var(--gold)}
+.mass-open-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;max-height:60vh;overflow-y:auto;padding:4px}
+.mass-open-card{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center;animation:massCardPop .4s ease both}
+.mass-open-card:nth-child(1){animation-delay:0s}.mass-open-card:nth-child(2){animation-delay:.05s}.mass-open-card:nth-child(3){animation-delay:.1s}.mass-open-card:nth-child(4){animation-delay:.15s}.mass-open-card:nth-child(5){animation-delay:.2s}.mass-open-card:nth-child(6){animation-delay:.25s}.mass-open-card:nth-child(7){animation-delay:.3s}.mass-open-card:nth-child(8){animation-delay:.35s}.mass-open-card:nth-child(9){animation-delay:.4s}.mass-open-card:nth-child(10){animation-delay:.45s}
+.mass-open-glow{animation:massCardPop .4s ease both,skinPulse 2s infinite .5s}
+.mass-open-emoji{font-size:1.6rem;margin-bottom:4px}
+.mass-open-name{font-size:.7rem;font-weight:700;margin-bottom:2px}
+.mass-open-rarity{font-size:.6rem;font-weight:600}
+@keyframes massCardPop{0%{opacity:0;transform:scale(.5) rotateY(90deg)}100%{opacity:1;transform:scale(1) rotateY(0)}}
+
 /* Robbery */
 .robbery-list{display:flex;flex-direction:column;gap:10px}
 .robbery-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
@@ -160,6 +273,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .char-eq-label{font-size:.75rem;color:var(--text2);font-weight:600}
 .char-eq-value{font-size:.85rem;font-weight:700}
 .char-eq-value.empty{color:var(--muted);font-style:italic;font-weight:400}
+
+/* ═══════ Character Avatar (Paper Doll) ═══════ */
+.char-avatar{position:relative;width:100%;height:220px;margin:0 0 14px}
+.char-avatar-figure{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);opacity:.15;filter:drop-shadow(0 0 8px rgba(255,255,255,.05))}
+.char-avatar-figure svg{width:100px;height:190px}
+.char-avatar-slot{position:absolute;width:44px;height:44px;border-radius:50%;background:var(--bg);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:1.3rem;transition:all .3s;z-index:2}
+.char-avatar-slot.empty{border:2px dashed var(--muted);opacity:.5}
+.char-avatar-slot.empty .char-avatar-slot-icon{font-size:.9rem;color:var(--muted);font-weight:700}
+.char-avatar-slot.equipped{opacity:1}
+.char-avatar-slot[data-rarity="common"]{border-color:#9e9e9e}
+.char-avatar-slot[data-rarity="uncommon"]{border-color:#4caf50;box-shadow:0 0 8px rgba(76,175,80,.4)}
+.char-avatar-slot[data-rarity="rare"]{border-color:#2196f3;box-shadow:0 0 8px rgba(33,150,243,.4)}
+.char-avatar-slot[data-rarity="epic"]{border-color:#9c27b0;box-shadow:0 0 10px rgba(156,39,176,.5)}
+.char-avatar-slot[data-rarity="legendary"]{border-color:#ff9800;box-shadow:0 0 12px rgba(255,152,0,.6);animation:legendaryPulse 2s ease-in-out infinite}
+@keyframes legendaryPulse{0%,100%{box-shadow:0 0 8px rgba(255,152,0,.4)}50%{box-shadow:0 0 18px rgba(255,152,0,.8)}}
+.char-avatar-slot-label{position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);font-size:.55rem;color:var(--text2);white-space:nowrap;font-weight:600}
+.char-avatar-slot[data-pos="hat"]{top:-2px;left:50%;transform:translateX(-50%)}
+.char-avatar-slot[data-pos="accessory"]{top:28%;right:6%;left:auto}
+.char-avatar-slot[data-pos="jacket"]{top:32%;left:6%}
+.char-avatar-slot[data-pos="weapon"]{top:55%;right:6%;left:auto}
+.char-avatar-slot[data-pos="car"]{bottom:2px;left:50%;transform:translateX(-50%)}
 
 .char-bonuses{background:var(--bg);border-radius:10px;padding:10px}
 .char-bonus-title{font-size:.7rem;color:var(--text2);margin-bottom:6px;font-weight:600}
@@ -274,6 +408,58 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .gang-input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px;font-size:.9rem;margin-bottom:8px}
 .gang-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
 .gang-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:space-between}
+
+/* Gang Detail */
+.gang-header-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
+.gang-header-name{font-size:1.15rem;font-weight:800;margin-bottom:4px}
+.gang-header-stats{font-size:.78rem;color:var(--text2);margin-bottom:10px}
+.gang-bank-row{display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg);border-radius:10px;margin-bottom:8px}
+.gang-bank-label{font-size:.8rem;color:var(--text2);font-weight:600}
+.gang-bank-amount{font-size:1.1rem;font-weight:900;color:var(--gold)}
+.gang-bank-actions{display:flex;gap:6px;align-items:center}
+.gang-bank-input{flex:1;margin-bottom:0!important;padding:8px!important;font-size:.85rem!important}
+.btn-gang-action{padding:8px 14px;border:none;border-radius:8px;font-size:.78rem;font-weight:700;cursor:pointer;color:#fff;transition:all .2s}
+.btn-gang-action:active{transform:scale(.95)}
+.btn-deposit{background:var(--green)}
+.btn-withdraw{background:var(--red)}
+
+.gang-upgrades-section{margin-bottom:12px}
+.gang-upgrades-section h3{font-size:.95rem;margin-bottom:8px}
+.gang-upgrades-list{display:flex;flex-direction:column;gap:8px}
+.gang-upgrade-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.gang-upgrade-left{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.gang-upgrade-emoji{font-size:1.6rem;width:36px;text-align:center;flex-shrink:0}
+.gang-upgrade-info{flex:1;min-width:0}
+.gang-upgrade-name{font-weight:700;font-size:.85rem;margin-bottom:2px}
+.gang-upgrade-lvl{color:var(--gold);font-size:.75rem;font-weight:600;margin-left:4px}
+.gang-upgrade-desc{font-size:.7rem;color:var(--text2)}
+.gang-upgrade-bonus{font-size:.7rem;color:var(--green);font-weight:600;margin-top:2px}
+.gang-upgrade-right{flex-shrink:0;text-align:right}
+.btn-gang-upgrade{padding:8px 12px;border:none;border-radius:8px;font-size:.75rem;font-weight:700;cursor:pointer;background:linear-gradient(135deg,var(--gold),var(--red));color:#fff;display:flex;flex-direction:column;align-items:center;gap:2px;transition:all .2s}
+.btn-gang-upgrade:active{transform:scale(.95)}
+.gang-upgrade-next{font-size:.6rem;opacity:.8}
+.gang-upgrade-max{font-size:.75rem;font-weight:700;color:var(--gold);padding:4px 10px;background:rgba(243,156,18,.15);border-radius:6px}
+.gang-upgrade-cost{font-size:.75rem;color:var(--text2);font-weight:600}
+
+.gang-members-section{margin-bottom:12px}
+.gang-members-section h3{font-size:.95rem;margin-bottom:8px}
+.gang-members-list{display:flex;flex-direction:column;gap:4px}
+.gang-member-row{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px}
+.gang-member-me{border-color:var(--gold);background:rgba(243,156,18,.05)}
+.gang-member-role{font-size:1rem;width:24px;text-align:center;flex-shrink:0}
+.gang-member-name{flex:1;font-size:.85rem;font-weight:600}
+.btn-gang-kick{padding:4px 10px;border:none;border-radius:6px;font-size:.68rem;font-weight:600;cursor:pointer;background:var(--red);color:#fff}
+.btn-gang-kick:active{transform:scale(.95)}
+
+.gang-log-section{margin-bottom:12px}
+.gang-log-section h3{font-size:.95rem;margin-bottom:8px}
+.gang-log-list{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px;max-height:200px;overflow-y:auto}
+.gang-log-entry{font-size:.75rem;color:var(--text2);padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.gang-log-entry:last-child{border-bottom:none}
+
+.btn-gang-leave{width:100%;padding:12px;border:none;border-radius:10px;font-size:.85rem;font-weight:600;cursor:pointer;background:var(--card);color:var(--red);border:1px solid var(--red);margin-top:8px;transition:all .2s}
+.btn-gang-leave:active{transform:scale(.95);background:rgba(231,76,60,.1)}
+.gang-detail-loading{text-align:center;padding:20px;color:var(--text2);font-size:.85rem}
 .pvp-section{margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}
 .pvp-section h3{margin-bottom:10px;font-size:.95rem}
 .pvp-target{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
@@ -340,6 +526,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .btn-prestige:active{transform:scale(.96)}
 .btn-prestige.disabled{background:var(--muted);cursor:not-allowed;opacity:.5}
 .prestige-warning{font-size:.68rem;color:var(--red);text-align:center;opacity:.8;margin-top:2px}
+
+/* ═══════ Talent Tree ═══════ */
+.talent-tree-section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:16px}
+.talent-tree-section h3{font-size:.95rem;margin-bottom:8px}
+.talent-points-badge{text-align:center;font-size:.85rem;color:var(--gold);font-weight:700;margin-bottom:10px}
+.talent-branch{margin-bottom:14px}
+.talent-branch-header{font-size:.85rem;font-weight:700;margin-bottom:8px;padding:6px 10px;border-radius:8px;background:var(--bg);display:flex;align-items:center;gap:6px}
+.talent-cards{display:flex;flex-direction:column;gap:6px}
+.talent-card{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px}
+.talent-card.maxed{border-color:var(--gold);background:rgba(243,156,18,.06)}
+.talent-card-icon{font-size:1.4rem;width:36px;text-align:center;flex-shrink:0}
+.talent-card-info{flex:1;min-width:0}
+.talent-card-name{font-weight:700;font-size:.8rem;margin-bottom:2px}
+.talent-card-desc{font-size:.68rem;color:var(--text2)}
+.talent-card-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.talent-dots{display:flex;gap:4px}
+.talent-dot{width:10px;height:10px;border-radius:50%;background:var(--border);border:1px solid var(--muted)}
+.talent-dot.filled{background:var(--gold);border-color:var(--gold);box-shadow:0 0 4px rgba(243,156,18,.5)}
+.btn-talent{width:28px;height:28px;border-radius:50%;border:none;background:var(--green);color:#fff;font-size:1rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+.btn-talent:disabled{background:var(--muted);cursor:not-allowed;opacity:.4}
 
 /* ═══════ Territories ═══════ */
 .territory-bonus-info{margin-bottom:12px}
@@ -437,3 +643,77 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .vip-item-locked{font-size:.7rem;color:var(--muted);font-weight:600}
 .btn-vip-claim{padding:6px 12px;border:none;border-radius:6px;font-size:.75rem;font-weight:600;cursor:pointer;background:var(--gold);color:#000}
 .btn-vip-claim:active{transform:scale(.95)}
+
+/* ── Event Banner ── */
+.event-banner{background:linear-gradient(135deg,#1a1a2e,#2d1b69);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--purple);cursor:pointer}
+.event-banner.hidden{display:none}
+.event-banner-left{display:flex;align-items:center;gap:8px}
+.event-banner-emoji{font-size:1.2rem}
+.event-banner-name{font-size:.8rem;font-weight:700;color:var(--gold)}
+.event-banner-right{display:flex;align-items:center;gap:8px;flex:1;max-width:50%}
+.event-banner-progress-wrap{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.event-banner-bar{height:100%;background:linear-gradient(90deg,var(--purple),var(--gold));border-radius:3px;transition:width .5s}
+.event-banner-score{font-size:.7rem;color:var(--text2);white-space:nowrap}
+
+/* Event popup */
+.event-popup-info{font-size:.8rem;color:var(--text2);margin-bottom:10px}
+.event-bonus{font-size:.75rem;color:var(--gold);margin-bottom:4px}
+.event-milestones{margin-top:10px;text-align:left}
+.event-ms-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:.8rem}
+.event-ms-row.event-ms-done{opacity:.7}
+.event-ms-score{color:var(--purple);font-weight:700;min-width:60px}
+.event-ms-reward{flex:1;color:var(--text)}
+.event-ms-claimed{color:var(--green);font-size:.9rem}
+.btn-sm{padding:4px 8px;font-size:.7rem}
+
+/* ── Tournament ── */
+.tournament-score-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;margin-bottom:12px}
+.tournament-score-label{font-size:.8rem;color:var(--text2);margin-bottom:4px}
+.tournament-score-value{font-size:2rem;font-weight:900;color:var(--gold)}
+.tournament-prizes-info{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:12px}
+.tournament-prizes-title{font-size:.85rem;font-weight:700;margin-bottom:8px;color:var(--gold)}
+.tournament-prize-row{font-size:.8rem;color:var(--text2);padding:3px 0}
+
+/* ── Quests ── */
+.quests-list{display:flex;flex-direction:column;gap:12px}
+.quest-line-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;overflow:hidden}
+.quest-line-card.quest-locked{opacity:.5}
+.quest-line-card.quest-completed{border-color:var(--green)}
+.quest-line-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.quest-line-emoji{font-size:1.5rem}
+.quest-line-name{font-weight:700;font-size:.9rem}
+.quest-line-desc{font-size:.75rem;color:var(--text2)}
+.quest-steps{display:flex;flex-direction:column;gap:8px;padding-left:8px;border-left:2px solid var(--border)}
+.quest-step{display:flex;align-items:flex-start;gap:8px;padding:4px 0}
+.quest-step-done{opacity:.6}
+.quest-step-current .quest-step-body{color:var(--gold)}
+.quest-step-marker{width:20px;text-align:center;font-size:.8rem;flex-shrink:0}
+.quest-step-body{flex:1;min-width:0}
+.quest-step-desc{font-size:.8rem;margin-bottom:4px}
+.quest-step-bar{height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:3px}
+.quest-step-fill{height:100%;background:var(--gold);border-radius:3px;transition:width .3s}
+.quest-step-progress{font-size:.7rem;color:var(--text2)}
+.quest-step-reward{font-size:.7rem;color:var(--green)}
+
+/* ── Boss ── */
+.boss-card{background:var(--card);border:1px solid var(--red);border-radius:12px;padding:16px;margin-bottom:12px}
+.boss-header{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.boss-emoji{font-size:2rem}
+.boss-name{font-size:1.1rem;font-weight:900}
+.boss-reward{font-size:.8rem;color:var(--gold)}
+.boss-hp-label{font-size:.75rem;color:var(--text2);margin-bottom:4px;text-align:center}
+.boss-hp-track{height:10px;background:var(--border);border-radius:5px;overflow:hidden}
+.boss-hp-fill{height:100%;border-radius:5px;transition:width .5s}
+.boss-attack-btn{font-size:1rem;font-weight:700}
+.boss-attackers{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:10px}
+.boss-attackers-title{font-size:.85rem;font-weight:700;margin-bottom:8px}
+.boss-atk-row{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:.8rem;border-bottom:1px solid var(--border)}
+.boss-atk-rank{color:var(--gold);font-weight:700;width:28px}
+.boss-atk-name{flex:1;color:var(--text)}
+.boss-atk-dmg{color:var(--red);font-weight:600}
+
+/* ── Achievement categories ── */
+.ach-category{margin-bottom:16px}
+.ach-category-header{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:.9rem;font-weight:700;border-bottom:1px solid var(--border);margin-bottom:8px}
+.ach-category-progress{font-size:.8rem;color:var(--text2);font-weight:400}
+.ach-tier{font-size:.65rem;font-weight:400;text-transform:uppercase}

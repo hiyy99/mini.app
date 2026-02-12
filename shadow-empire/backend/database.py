@@ -99,6 +99,7 @@ async def init_db():
         cash_bank REAL DEFAULT 0.0,
         power INTEGER DEFAULT 0,
         territory INTEGER DEFAULT 0,
+        last_territory_attack_ts REAL DEFAULT 0.0,
         created_at REAL DEFAULT (strftime('%s','now'))
     );
 
@@ -108,6 +109,21 @@ async def init_db():
         role TEXT DEFAULT 'member',
         joined_at REAL DEFAULT (strftime('%s','now')),
         FOREIGN KEY (gang_id) REFERENCES gangs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS gang_upgrades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gang_id INTEGER NOT NULL,
+        upgrade_id TEXT NOT NULL,
+        level INTEGER DEFAULT 1,
+        UNIQUE(gang_id, upgrade_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS gang_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gang_id INTEGER NOT NULL,
+        message TEXT NOT NULL,
+        created_at REAL DEFAULT (strftime('%s','now'))
     );
 
     CREATE TABLE IF NOT EXISTS pvp_log (
@@ -205,6 +221,94 @@ async def init_db():
         created_at REAL DEFAULT (strftime('%s','now')),
         FOREIGN KEY (telegram_id) REFERENCES players(telegram_id)
     );
+
+    CREATE TABLE IF NOT EXISTS player_skins (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL,
+        skin_id TEXT NOT NULL,
+        purchased_at REAL DEFAULT (strftime('%s','now')),
+        FOREIGN KEY (telegram_id) REFERENCES players(telegram_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS business_equipped_skins (
+        telegram_id INTEGER NOT NULL,
+        business_id TEXT NOT NULL,
+        skin_id TEXT NOT NULL,
+        PRIMARY KEY (telegram_id, business_id),
+        FOREIGN KEY (telegram_id) REFERENCES players(telegram_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS tournament_scores (
+        telegram_id INTEGER NOT NULL,
+        day TEXT NOT NULL,
+        score INTEGER DEFAULT 0,
+        UNIQUE(telegram_id, day)
+    );
+
+    CREATE TABLE IF NOT EXISTS tournament_prizes_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL,
+        day TEXT NOT NULL,
+        place INTEGER DEFAULT 0,
+        cash_prize REAL DEFAULT 0,
+        cases_prize INTEGER DEFAULT 0,
+        created_at REAL DEFAULT (strftime('%s','now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS player_quests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL,
+        quest_id TEXT NOT NULL,
+        current_step INTEGER DEFAULT 0,
+        step_progress INTEGER DEFAULT 0,
+        completed INTEGER DEFAULT 0,
+        UNIQUE(telegram_id, quest_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS player_event_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL,
+        event_id TEXT NOT NULL,
+        progress INTEGER DEFAULT 0,
+        rewards_claimed TEXT DEFAULT '',
+        UNIQUE(telegram_id, event_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS active_bosses (
+        gang_id INTEGER UNIQUE,
+        boss_id TEXT NOT NULL,
+        current_health REAL NOT NULL,
+        max_health REAL NOT NULL,
+        defeated INTEGER DEFAULT 0,
+        boss_index INTEGER DEFAULT 0,
+        spawned_at REAL DEFAULT (strftime('%s','now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS boss_attack_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gang_id INTEGER NOT NULL,
+        telegram_id INTEGER NOT NULL,
+        damage REAL DEFAULT 0,
+        created_at REAL DEFAULT (strftime('%s','now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS boss_rewards_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gang_id INTEGER NOT NULL,
+        boss_id TEXT NOT NULL,
+        telegram_id INTEGER NOT NULL,
+        cash_reward REAL DEFAULT 0,
+        created_at REAL DEFAULT (strftime('%s','now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS player_talents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL,
+        talent_id TEXT NOT NULL,
+        level INTEGER DEFAULT 1,
+        FOREIGN KEY (telegram_id) REFERENCES players(telegram_id),
+        UNIQUE(telegram_id, talent_id)
+    );
     """)
 
     # ── Migrations (safe ALTER TABLE) ──
@@ -218,12 +322,31 @@ async def init_db():
         ("players", "last_ad_ts", "ALTER TABLE players ADD COLUMN last_ad_ts REAL DEFAULT 0"),
         ("players", "ad_boost_until", "ALTER TABLE players ADD COLUMN ad_boost_until REAL DEFAULT 0"),
         ("players", "last_vip_case_claim", "ALTER TABLE players ADD COLUMN last_vip_case_claim TEXT DEFAULT ''"),
+        ("players", "last_vip_skin_claim", "ALTER TABLE players ADD COLUMN last_vip_skin_claim TEXT DEFAULT ''"),
+        ("player_achievements", "tier", "ALTER TABLE player_achievements ADD COLUMN tier TEXT DEFAULT 'bronze'"),
+        ("players", "last_boss_attack_ts", "ALTER TABLE players ADD COLUMN last_boss_attack_ts REAL DEFAULT 0"),
+        ("players", "casino_plays", "ALTER TABLE players ADD COLUMN casino_plays INTEGER DEFAULT 0"),
+        ("players", "casino_wins", "ALTER TABLE players ADD COLUMN casino_wins INTEGER DEFAULT 0"),
+        ("players", "market_sales", "ALTER TABLE players ADD COLUMN market_sales INTEGER DEFAULT 0"),
+        ("players", "tournament_top10", "ALTER TABLE players ADD COLUMN tournament_top10 INTEGER DEFAULT 0"),
+        ("players", "tournament_top3", "ALTER TABLE players ADD COLUMN tournament_top3 INTEGER DEFAULT 0"),
+        ("players", "bosses_killed", "ALTER TABLE players ADD COLUMN bosses_killed INTEGER DEFAULT 0"),
+        ("players", "talent_points", "ALTER TABLE players ADD COLUMN talent_points INTEGER DEFAULT 0"),
     ]
     for table, column, sql in migrations:
         try:
             await db.execute(sql)
         except Exception:
             pass  # column already exists
+
+    # ── Backfill talent_points for existing prestige players ──
+    try:
+        await db.execute(
+            "UPDATE players SET talent_points = prestige_level "
+            "WHERE prestige_level > 0 AND talent_points = 0"
+        )
+    except Exception:
+        pass
 
     # ── Seed territories ──
     cursor = await db.execute("SELECT COUNT(*) as cnt FROM territories")
