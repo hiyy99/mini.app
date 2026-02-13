@@ -39,7 +39,7 @@ let S = {
 let AdController = null;
 try {
     if (window.Adsgram) {
-        AdController = window.Adsgram.init({ blockId: "22910" });
+        AdController = window.Adsgram.init({ blockId: "22924" });
     }
 } catch(e) { console.log('Adsgram not available'); }
 
