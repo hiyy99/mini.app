@@ -190,6 +190,8 @@ class TonCreateRequest(BaseModel):
 class TonVerifyRequest(BaseModel):
     telegram_id: int
     tx_hash: str
+    comment: str = ""
+    package_id: str = ""
 
 class VipItemClaimRequest(BaseModel):
     telegram_id: int
@@ -2825,10 +2827,7 @@ async def ton_create_payment(req: TonCreateRequest):
 
 @app.post("/api/ton/verify")
 async def ton_verify_payment(req: TonVerifyRequest):
-    """Verify a TON transaction and activate the purchase."""
-    # In production, verify the transaction on-chain via TON API
-    # For now, we trust the client and activate the purchase
-    # TODO: Implement proper on-chain verification
+    """Verify a TON transaction on-chain and activate the purchase."""
     db = await get_db()
     try:
         player = await get_player(db, req.telegram_id)
@@ -2842,8 +2841,60 @@ async def ton_verify_payment(req: TonVerifyRequest):
         if await cursor.fetchone():
             raise HTTPException(400, "Transaction already processed")
 
-        # For now return a pending status — real verification needs TON API
-        return {"status": "pending", "message": "Transaction verification in progress. Contact support if not activated within 5 minutes."}
+        # Verify on-chain via TON Center API
+        verified = False
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"https://toncenter.com/api/v2/getTransactions",
+                params={"address": TON_WALLET_ADDRESS, "limit": 20},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                for tx in data.get("result", []):
+                    msg = tx.get("in_msg", {})
+                    body = msg.get("message", "")
+                    value = int(msg.get("value", "0"))
+                    if req.comment and req.comment in body and value > 0:
+                        verified = True
+                        break
+
+        if not verified:
+            return {"status": "pending", "message": "Транзакция ещё не найдена. Подожди 1-2 минуты и нажми проверить снова."}
+
+        # Activate purchase
+        all_packages = {**VIP_PACKAGES, **CASH_PACKAGES, **CASE_PACKAGES}
+        pkg = all_packages.get(req.package_id)
+        if not pkg:
+            raise HTTPException(400, "Unknown package")
+
+        now = time.time()
+        if req.package_id in VIP_PACKAGES:
+            days = pkg["days"]
+            cursor2 = await db.execute("SELECT vip_until FROM players WHERE telegram_id=?", (req.telegram_id,))
+            row = await cursor2.fetchone()
+            if row:
+                current_until = row["vip_until"] or 0
+                base = max(current_until, now)
+                new_until = base + days * 86400
+                await db.execute("UPDATE players SET is_vip=1, vip_until=? WHERE telegram_id=?", (new_until, req.telegram_id))
+
+        elif req.package_id in CASH_PACKAGES:
+            await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (pkg["cash"], req.telegram_id))
+
+        elif req.package_id in CASE_PACKAGES:
+            for case_id, count in pkg["cases"]:
+                for _ in range(count):
+                    await db.execute("INSERT INTO player_cases (telegram_id, case_id) VALUES (?, ?)", (req.telegram_id, case_id))
+
+        # Log transaction
+        await db.execute(
+            "INSERT INTO premium_transactions (telegram_id, package_id, payment_method, amount) VALUES (?,?,?,?)",
+            (req.telegram_id, req.package_id, "ton", req.tx_hash),
+        )
+        await db.commit()
+
+        player = await get_player(db, req.telegram_id)
+        return {"status": "ok", "message": "Покупка активирована!", "player": player}
     finally:
         await db.close()
 

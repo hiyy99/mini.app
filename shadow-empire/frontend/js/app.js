@@ -2291,14 +2291,29 @@ async function buyWithTon(packageId) {
             }],
         };
         const result = await tonConnectUI.sendTransaction(tx);
-        showPopup('💎', 'Транзакция отправлена!', '', 'Покупка будет активирована после подтверждения', '');
-        // Verify after delay
-        setTimeout(async () => {
-            try {
-                await api('/api/ton/verify', { telegram_id: S.player.telegram_id, tx_hash: result.boc || 'manual' });
-            } catch(e) {}
-            setTimeout(() => location.reload(), 3000);
-        }, 5000);
+        showPopup('💎', 'Транзакция отправлена!', '', 'Проверяем оплату...', '');
+        // Verify with retries
+        const verifyPayment = async (attempts) => {
+            for (let i = 0; i < attempts; i++) {
+                await new Promise(ok => setTimeout(ok, 10000));
+                try {
+                    const vr = await api('/api/ton/verify', {
+                        telegram_id: S.player.telegram_id,
+                        tx_hash: result.boc || 'manual',
+                        comment: r.comment,
+                        package_id: packageId,
+                    });
+                    if (vr.status === 'ok') {
+                        S.player = vr.player;
+                        showPopup('✅', 'Успех!', '', vr.message, '');
+                        renderAll();
+                        return;
+                    }
+                } catch(e) {}
+            }
+            showPopup('⏳', 'Проверьте позже', '', 'Транзакция не найдена. Попробуйте обновить страницу через пару минут.', '');
+        };
+        verifyPayment(6);
 
     } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || 'TON оплата не удалась', ''); }
 }

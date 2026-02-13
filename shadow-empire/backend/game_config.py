@@ -831,7 +831,7 @@ TON_PRICES = {
     "case_legend_x1":  0.25,
 }
 
-TON_WALLET_ADDRESS = "UQD...your_wallet_address..."  # Replace with real wallet
+TON_WALLET_ADDRESS = "UQACgXUC3WxvB1ykvD_ah3f1qpsCkZLHLovExKBYKxzvVOu2"
 
 VIP_ITEMS = {
     "hat_vip_crown": {
