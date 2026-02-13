@@ -2250,9 +2250,11 @@ async def do_prestige(req: PrestigeRequest):
                     # Leader: zero the gang bank (they can withdraw)
                     await db.execute("UPDATE gangs SET cash_bank=0 WHERE id=?", (player["gang_id"],))
 
-            # Reset businesses, cash, reputation — keep items, gang, prestige, talents
+            # Reset businesses, cash, reputation, inventory — keep gang, prestige, talents
             await db.execute("DELETE FROM player_businesses WHERE telegram_id=?", (req.telegram_id,))
             await db.execute("DELETE FROM player_upgrades WHERE telegram_id=?", (req.telegram_id,))
+            await db.execute("DELETE FROM player_inventory WHERE telegram_id=?", (req.telegram_id,))
+            await db.execute("UPDATE player_character SET hat='none', jacket='none', accessory='none', weapon='none', car='none' WHERE telegram_id=?", (req.telegram_id,))
             await db.execute(
                 "UPDATE players SET cash=?, suspicion=0, reputation_fear=?, reputation_respect=0, "
                 "total_earned=0, total_robberies=0, robbery_cooldown_ts=0, pvp_cooldown_ts=0, "
