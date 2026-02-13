@@ -68,13 +68,34 @@ async def admin_add_cash(req: dict):
         raise HTTPException(403, "Forbidden")
     tid = req.get("telegram_id")
     amount = req.get("amount", 0)
+    async with get_player_lock(tid):
+        db = await get_db()
+        try:
+            # Sync earnings first so we don't lose them
+            player = await get_player(db, tid)
+            if not player:
+                raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, tid)
+            await sync_earnings(db, player, owned)
+            # Now safely add cash
+            await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (amount, tid))
+            await db.commit()
+            cursor = await db.execute("SELECT cash FROM players WHERE telegram_id=?", (tid,))
+            row = await cursor.fetchone()
+            return {"telegram_id": tid, "cash": row["cash"] if row else None}
+        finally:
+            await db.close()
+
+
+@app.post("/api/admin/players")
+async def admin_list_players(req: dict):
+    if req.get("secret") != ADMIN_SECRET:
+        raise HTTPException(403, "Forbidden")
     db = await get_db()
     try:
-        await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (amount, tid))
-        await db.commit()
-        cursor = await db.execute("SELECT cash FROM players WHERE telegram_id=?", (tid,))
-        row = await cursor.fetchone()
-        return {"telegram_id": tid, "cash": row["cash"] if row else None}
+        cursor = await db.execute("SELECT telegram_id, username, cash, prestige_level FROM players ORDER BY created_at DESC LIMIT 50")
+        rows = [dict(r) for r in await cursor.fetchall()]
+        return {"players": rows}
     finally:
         await db.close()
 
