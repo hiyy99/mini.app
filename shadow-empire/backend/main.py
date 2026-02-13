@@ -79,6 +79,28 @@ async def admin_add_cash(req: dict):
         await db.close()
 
 
+@app.post("/api/admin/reset")
+async def admin_reset_player(req: dict):
+    if req.get("secret") != ADMIN_SECRET:
+        raise HTTPException(403, "Forbidden")
+    tid = req.get("telegram_id")
+    db = await get_db()
+    try:
+        for table in [
+            "players", "player_businesses", "player_character", "player_inventory",
+            "player_cases", "player_upgrades", "player_achievements", "player_talents",
+            "player_skins", "business_equipped_skins", "daily_missions", "daily_login",
+            "player_quests", "player_event_progress", "tournament_scores",
+        ]:
+            await db.execute(f"DELETE FROM {table} WHERE telegram_id=?", (tid,))
+        await db.execute("DELETE FROM gang_members WHERE telegram_id=?", (tid,))
+        await db.execute("DELETE FROM market_listings WHERE seller_id=?", (tid,))
+        await db.commit()
+        return {"status": "ok", "telegram_id": tid}
+    finally:
+        await db.close()
+
+
 # ── Request Models ──
 
 class PlayerInit(BaseModel):
