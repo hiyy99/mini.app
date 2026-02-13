@@ -17,7 +17,8 @@ from backend.game_config import VIP_PACKAGES, CASH_PACKAGES, CASE_PACKAGES
 # ── Config ──
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBAPP_URL = os.environ["WEBAPP_URL"]
-DB_PATH = os.path.join(os.path.dirname(__file__), "game.db")
+_data_dir = os.getenv("DATA_DIR", os.path.dirname(__file__))
+DB_PATH = os.path.join(_data_dir, "game.db")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
