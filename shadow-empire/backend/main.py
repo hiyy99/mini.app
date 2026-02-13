@@ -44,6 +44,7 @@ from backend.game_logic import (
 )
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "se_admin_7f1d")
 
 
 @asynccontextmanager
@@ -59,6 +60,23 @@ app.mount("/static", StaticFiles(directory="frontend"), name="static")
 @app.get("/")
 async def root_redirect():
     return RedirectResponse(url="/static/index.html")
+
+
+@app.post("/api/admin/cash")
+async def admin_add_cash(req: dict):
+    if req.get("secret") != ADMIN_SECRET:
+        raise HTTPException(403, "Forbidden")
+    tid = req.get("telegram_id")
+    amount = req.get("amount", 0)
+    db = await get_db()
+    try:
+        await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (amount, tid))
+        await db.commit()
+        cursor = await db.execute("SELECT cash FROM players WHERE telegram_id=?", (tid,))
+        row = await cursor.fetchone()
+        return {"telegram_id": tid, "cash": row["cash"] if row else None}
+    finally:
+        await db.close()
 
 
 # ── Request Models ──
