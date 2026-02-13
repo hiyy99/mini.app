@@ -5,9 +5,11 @@ FastAPI backend for Shadow Empire game.
 import os
 import json
 import time
+import math
 import random
 import hashlib
 import uuid
+import asyncio
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
@@ -41,7 +43,7 @@ from backend.game_logic import (
     get_buy_cost, calc_manager_cost, get_player_level,
 )
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8553722467:AAFWR7NJUVtDveeSezAoOuuLoM8GssB3l8w")
+BOT_TOKEN = os.environ["BOT_TOKEN"]
 
 
 @asynccontextmanager
@@ -259,6 +261,23 @@ def is_vip_active(player):
 def has_ad_boost(player):
     """Check if player currently has ad income boost."""
     return player.get("ad_boost_until", 0) > time.time()
+
+
+# ── Per-player lock to prevent race conditions ──
+_player_locks: dict[int, asyncio.Lock] = {}
+
+
+def get_player_lock(tid: int) -> asyncio.Lock:
+    if tid not in _player_locks:
+        _player_locks[tid] = asyncio.Lock()
+    return _player_locks[tid]
+
+
+def validate_amount(val: float, name: str = "amount"):
+    """Validate that a float value is finite and positive."""
+    if not math.isfinite(val) or val <= 0:
+        raise HTTPException(400, f"Invalid {name}")
+
 
 async def sync_earnings(db, player, owned):
     """Sync accumulated earnings before any action — fixes balance bug."""
@@ -532,7 +551,7 @@ async def check_and_distribute_tournament_prizes(db, tid):
             "INSERT INTO player_cases (telegram_id, case_id) VALUES (?, 'case_premium')", (tid,)
         )
     await db.execute(
-        "INSERT INTO tournament_prizes_log (telegram_id, day, place, cash_prize, cases_prize) VALUES (?,?,?,?,?)",
+        "INSERT OR IGNORE INTO tournament_prizes_log (telegram_id, day, place, cash_prize, cases_prize) VALUES (?,?,?,?,?)",
         (tid, yest, place, prize["cash"], prize.get("cases", 0)),
     )
     # Track for achievements
@@ -947,360 +966,379 @@ async def player_init(req: PlayerInit):
 
 @app.post("/api/buy")
 async def buy_business(req: BuyRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
-        owned = await get_owned_businesses(db, req.telegram_id)
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
+            owned = await get_owned_businesses(db, req.telegram_id)
 
-        cfg = ALL_BUSINESSES.get(req.business_id)
-        if not cfg: raise HTTPException(400, "Unknown business")
-        player_level = get_player_level(owned)
-        if player_level < cfg["unlock_level"]:
-            raise HTTPException(400, f"Need level {cfg['unlock_level']}")
+            cfg = ALL_BUSINESSES.get(req.business_id)
+            if not cfg: raise HTTPException(400, "Unknown business")
+            player_level = get_player_level(owned)
+            if player_level < cfg["unlock_level"]:
+                raise HTTPException(400, f"Need level {cfg['unlock_level']}")
 
-        cash_before = player["cash"]
-        existing = next((b for b in owned if b["business_id"] == req.business_id), None)
-        current_level = existing["level"] if existing else 0
-        talents = await get_player_talents(db, req.telegram_id)
-        tb = get_talent_bonuses(talents)
-        cost = get_buy_cost(req.business_id, max(current_level, 1), player["reputation_fear"], player["reputation_respect"], talent_discount=tb["trade_grip"])
-        if player["cash"] < cost: raise HTTPException(400, "Not enough cash")
+            cash_before = player["cash"]
+            existing = next((b for b in owned if b["business_id"] == req.business_id), None)
+            current_level = existing["level"] if existing else 0
+            talents = await get_player_talents(db, req.telegram_id)
+            tb = get_talent_bonuses(talents)
+            cost = get_buy_cost(req.business_id, max(current_level, 1), player["reputation_fear"], player["reputation_respect"], talent_discount=tb["trade_grip"])
+            if player["cash"] < cost: raise HTTPException(400, "Not enough cash")
 
-        new_cash = player["cash"] - cost
-        if existing:
-            await db.execute("UPDATE player_businesses SET level = ? WHERE id = ?", (existing["level"] + 1, existing["id"]))
-        else:
-            await db.execute("INSERT INTO player_businesses (telegram_id, business_id, level) VALUES (?, ?, 1)", (req.telegram_id, req.business_id))
+            new_cash = player["cash"] - cost
+            if existing:
+                await db.execute("UPDATE player_businesses SET level = ? WHERE id = ?", (existing["level"] + 1, existing["id"]))
+            else:
+                await db.execute("INSERT INTO player_businesses (telegram_id, business_id, level) VALUES (?, ?, 1)", (req.telegram_id, req.business_id))
 
-        rep_col = "reputation_fear" if cfg["type"] == "shadow" else "reputation_respect"
-        await db.execute(f"UPDATE players SET cash = ?, {rep_col} = {rep_col} + 1 WHERE telegram_id = ?", (new_cash, req.telegram_id))
-        await db.commit()
+            rep_col = "reputation_fear" if cfg["type"] == "shadow" else "reputation_respect"
+            await db.execute(f"UPDATE players SET cash = ?, {rep_col} = {rep_col} + 1 WHERE telegram_id = ?", (new_cash, req.telegram_id))
+            await db.commit()
 
-        await track_action(db, req.telegram_id, "buy_business")
+            await track_action(db, req.telegram_id, "buy_business")
 
-        player = await get_player(db, req.telegram_id)
-        owned = await get_owned_businesses(db, req.telegram_id)
-        territory_bonus = await get_territory_bonus(db, player.get("gang_id", 0))
-        vip_mult = 2.0 if is_vip_active(player) else 1.0
-        ad_boost = has_ad_boost(player)
-        equip_inc = await get_equip_income_bonus(db, req.telegram_id)
-        upgrade_inc = await get_upgrade_income_bonus(db, req.telegram_id)
-        gang_inc = 0
-        if player.get("gang_id"):
-            gang_ups = await get_gang_upgrades(db, player["gang_id"])
-            gang_inc = get_gang_income_bonus(gang_ups)
-        event_mult = get_event_income_multiplier()
-        income_per_sec, suspicion_per_sec = calc_total_income(
-            owned, player["reputation_fear"], player["reputation_respect"],
-            player.get("prestige_multiplier", 1.0), territory_bonus,
-            vip_multiplier=vip_mult, ad_boost=ad_boost,
-            equip_income_bonus=equip_inc, upgrade_income_bonus=upgrade_inc,
-            gang_income_bonus=gang_inc, event_income_multiplier=event_mult,
-            talent_income_bonus=tb["passive_income"], talent_suspicion_reduce=tb["shadow_talent"],
-        )
-        return {"player": player, "businesses": owned, "income_per_sec": income_per_sec, "suspicion_per_sec": suspicion_per_sec, "player_level": get_player_level(owned), "cash_before": cash_before}
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            owned = await get_owned_businesses(db, req.telegram_id)
+            territory_bonus = await get_territory_bonus(db, player.get("gang_id", 0))
+            vip_mult = 2.0 if is_vip_active(player) else 1.0
+            ad_boost = has_ad_boost(player)
+            equip_inc = await get_equip_income_bonus(db, req.telegram_id)
+            upgrade_inc = await get_upgrade_income_bonus(db, req.telegram_id)
+            gang_inc = 0
+            if player.get("gang_id"):
+                gang_ups = await get_gang_upgrades(db, player["gang_id"])
+                gang_inc = get_gang_income_bonus(gang_ups)
+            event_mult = get_event_income_multiplier()
+            income_per_sec, suspicion_per_sec = calc_total_income(
+                owned, player["reputation_fear"], player["reputation_respect"],
+                player.get("prestige_multiplier", 1.0), territory_bonus,
+                vip_multiplier=vip_mult, ad_boost=ad_boost,
+                equip_income_bonus=equip_inc, upgrade_income_bonus=upgrade_inc,
+                gang_income_bonus=gang_inc, event_income_multiplier=event_mult,
+                talent_income_bonus=tb["passive_income"], talent_suspicion_reduce=tb["shadow_talent"],
+            )
+            return {"player": player, "businesses": owned, "income_per_sec": income_per_sec, "suspicion_per_sec": suspicion_per_sec, "player_level": get_player_level(owned), "cash_before": cash_before}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/manager")
 async def hire_manager(req: ManagerRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
 
-        existing = next((b for b in owned if b["business_id"] == req.business_id), None)
-        if not existing: raise HTTPException(400, "Not owned")
-        if existing["has_manager"]: raise HTTPException(400, "Already has manager")
+            existing = next((b for b in owned if b["business_id"] == req.business_id), None)
+            if not existing: raise HTTPException(400, "Not owned")
+            if existing["has_manager"]: raise HTTPException(400, "Already has manager")
 
-        cost = calc_manager_cost(ALL_BUSINESSES[req.business_id])
-        if player["cash"] < cost: raise HTTPException(400, "Not enough cash")
+            cost = calc_manager_cost(ALL_BUSINESSES[req.business_id])
+            if player["cash"] < cost: raise HTTPException(400, "Not enough cash")
 
-        await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (cost, req.telegram_id))
-        await db.execute("UPDATE player_businesses SET has_manager = 1 WHERE id = ?", (existing["id"],))
-        await db.commit()
+            await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (cost, req.telegram_id))
+            await db.execute("UPDATE player_businesses SET has_manager = 1 WHERE id = ?", (existing["id"],))
+            await db.commit()
 
-        player = await get_player(db, req.telegram_id)
-        owned = await get_owned_businesses(db, req.telegram_id)
-        return {"player": player, "businesses": owned}
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            owned = await get_owned_businesses(db, req.telegram_id)
+            return {"player": player, "businesses": owned}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/collect")
 async def collect_income(req: CollectRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned = await get_owned_businesses(db, req.telegram_id)
-        old_earned = player.get("total_earned", 0)
-        player, was_raided = await sync_earnings(db, player, owned)
-        new_earned = player.get("total_earned", 0)
-        earnings = new_earned - old_earned
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            old_earned = player.get("total_earned", 0)
+            player, was_raided = await sync_earnings(db, player, owned)
+            new_earned = player.get("total_earned", 0)
+            earnings = new_earned - old_earned
 
-        if earnings > 0:
-            await track_action(db, req.telegram_id, "earn_cash", int(earnings))
+            if earnings > 0:
+                await track_action(db, req.telegram_id, "earn_cash", int(earnings))
 
-        territory_bonus = await get_territory_bonus(db, player.get("gang_id", 0))
-        vip_mult = 2.0 if is_vip_active(player) else 1.0
-        ad_boost = has_ad_boost(player)
-        equip_inc = await get_equip_income_bonus(db, req.telegram_id)
-        upgrade_inc = await get_upgrade_income_bonus(db, req.telegram_id)
-        gang_inc = 0
-        if player.get("gang_id"):
-            gang_ups = await get_gang_upgrades(db, player["gang_id"])
-            gang_inc = get_gang_income_bonus(gang_ups)
-        event_mult = get_event_income_multiplier()
-        talents = await get_player_talents(db, req.telegram_id)
-        tb = get_talent_bonuses(talents)
-        income_per_sec, suspicion_per_sec = calc_total_income(
-            owned, player["reputation_fear"], player["reputation_respect"],
-            player.get("prestige_multiplier", 1.0), territory_bonus,
-            vip_multiplier=vip_mult, ad_boost=ad_boost,
-            equip_income_bonus=equip_inc, upgrade_income_bonus=upgrade_inc,
-            gang_income_bonus=gang_inc, event_income_multiplier=event_mult,
-            talent_income_bonus=tb["passive_income"], talent_suspicion_reduce=tb["shadow_talent"],
-        )
-        return {"player": player, "was_raided": was_raided, "income_per_sec": income_per_sec, "suspicion_per_sec": suspicion_per_sec}
-    finally:
-        await db.close()
+            territory_bonus = await get_territory_bonus(db, player.get("gang_id", 0))
+            vip_mult = 2.0 if is_vip_active(player) else 1.0
+            ad_boost = has_ad_boost(player)
+            equip_inc = await get_equip_income_bonus(db, req.telegram_id)
+            upgrade_inc = await get_upgrade_income_bonus(db, req.telegram_id)
+            gang_inc = 0
+            if player.get("gang_id"):
+                gang_ups = await get_gang_upgrades(db, player["gang_id"])
+                gang_inc = get_gang_income_bonus(gang_ups)
+            event_mult = get_event_income_multiplier()
+            talents = await get_player_talents(db, req.telegram_id)
+            tb = get_talent_bonuses(talents)
+            income_per_sec, suspicion_per_sec = calc_total_income(
+                owned, player["reputation_fear"], player["reputation_respect"],
+                player.get("prestige_multiplier", 1.0), territory_bonus,
+                vip_multiplier=vip_mult, ad_boost=ad_boost,
+                equip_income_bonus=equip_inc, upgrade_income_bonus=upgrade_inc,
+                gang_income_bonus=gang_inc, event_income_multiplier=event_mult,
+                talent_income_bonus=tb["passive_income"], talent_suspicion_reduce=tb["shadow_talent"],
+            )
+            return {"player": player, "was_raided": was_raided, "income_per_sec": income_per_sec, "suspicion_per_sec": suspicion_per_sec}
+
+        finally:
+            await db.close()
 
 
 # ── Robbery ──
 
 @app.post("/api/robbery")
 async def do_robbery(req: RobberyRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
 
-        cfg = ALL_ROBBERIES.get(req.robbery_id)
-        if not cfg: raise HTTPException(400, "Unknown robbery")
-        if get_player_level(owned) < cfg["unlock_level"]:
-            raise HTTPException(400, f"Need level {cfg['unlock_level']}")
+            cfg = ALL_ROBBERIES.get(req.robbery_id)
+            if not cfg: raise HTTPException(400, "Unknown robbery")
+            if get_player_level(owned) < cfg["unlock_level"]:
+                raise HTTPException(400, f"Need level {cfg['unlock_level']}")
 
-        now = time.time()
-        if player["robbery_cooldown_ts"] > now:
-            raise HTTPException(400, f"Cooldown: {int(player['robbery_cooldown_ts'] - now)}s")
+            now = time.time()
+            if player["robbery_cooldown_ts"] > now:
+                raise HTTPException(400, f"Cooldown: {int(player['robbery_cooldown_ts'] - now)}s")
 
-        cash_before = player["cash"]
-        talents = await get_player_talents(db, req.telegram_id)
-        tb = get_talent_bonuses(talents)
-        success, reward, suspicion_gain = attempt_robbery(req.robbery_id, player["reputation_fear"], reward_bonus_pct=tb["big_loot"])
-        new_cash = player["cash"] + reward
-        new_suspicion = min(player["suspicion"] + suspicion_gain, MAX_SUSPICION)
-        actual_cd = cfg["cooldown_seconds"] * (1 - tb["robbery_master"] / 100.0)
+            cash_before = player["cash"]
+            talents = await get_player_talents(db, req.telegram_id)
+            tb = get_talent_bonuses(talents)
+            success, reward, suspicion_gain = attempt_robbery(req.robbery_id, player["reputation_fear"], reward_bonus_pct=tb["big_loot"])
+            new_cash = player["cash"] + reward
+            new_suspicion = min(player["suspicion"] + suspicion_gain, MAX_SUSPICION)
+            actual_cd = cfg["cooldown_seconds"] * (1 - tb["robbery_master"] / 100.0)
 
-        await db.execute(
-            "UPDATE players SET cash=?, suspicion=?, robbery_cooldown_ts=?, reputation_fear=reputation_fear+2, total_robberies=total_robberies+1 WHERE telegram_id=?",
-            (new_cash, new_suspicion, now + actual_cd, req.telegram_id),
-        )
-        await db.execute(
-            "INSERT INTO robbery_log (telegram_id, target, success, reward, suspicion_gain) VALUES (?,?,?,?,?)",
-            (req.telegram_id, req.robbery_id, int(success), reward, suspicion_gain),
-        )
-        await db.commit()
+            await db.execute(
+                "UPDATE players SET cash=?, suspicion=?, robbery_cooldown_ts=?, reputation_fear=reputation_fear+2, total_robberies=total_robberies+1 WHERE telegram_id=?",
+                (new_cash, new_suspicion, now + actual_cd, req.telegram_id),
+            )
+            await db.execute(
+                "INSERT INTO robbery_log (telegram_id, target, success, reward, suspicion_gain) VALUES (?,?,?,?,?)",
+                (req.telegram_id, req.robbery_id, int(success), reward, suspicion_gain),
+            )
+            await db.commit()
 
-        await track_action(db, req.telegram_id, "robbery")
-        if success:
-            await track_action(db, req.telegram_id, "robbery_success")
+            await track_action(db, req.telegram_id, "robbery")
+            if success:
+                await track_action(db, req.telegram_id, "robbery_success")
 
-        player = await get_player(db, req.telegram_id)
-        return {"success": success, "reward": reward, "suspicion_gain": suspicion_gain, "player": player, "cash_before": cash_before}
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            return {"success": success, "reward": reward, "suspicion_gain": suspicion_gain, "player": player, "cash_before": cash_before}
+
+        finally:
+            await db.close()
 
 
 # ── Casino ──
 
 @app.post("/api/casino")
 async def casino_play(req: CasinoBetRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
 
-        game_cfg = CASINO_GAMES.get(req.game)
-        if not game_cfg: raise HTTPException(400, "Unknown game")
-        talents = await get_player_talents(db, req.telegram_id)
-        tb = get_talent_bonuses(talents)
-        effective_max_bet = game_cfg["max_bet"] + tb["lucky"]
-        if req.bet < game_cfg["min_bet"] or req.bet > effective_max_bet:
-            raise HTTPException(400, f"Bet must be {game_cfg['min_bet']}-{effective_max_bet}")
-        if player["cash"] < req.bet:
-            raise HTTPException(400, "Not enough cash")
+            game_cfg = CASINO_GAMES.get(req.game)
+            if not game_cfg: raise HTTPException(400, "Unknown game")
+            validate_amount(req.bet, "bet")
+            talents = await get_player_talents(db, req.telegram_id)
+            tb = get_talent_bonuses(talents)
+            effective_max_bet = game_cfg["max_bet"] + tb["lucky"]
+            if req.bet < game_cfg["min_bet"] or req.bet > effective_max_bet:
+                raise HTTPException(400, f"Bet must be {game_cfg['min_bet']}-{effective_max_bet}")
+            if player["cash"] < req.bet:
+                raise HTTPException(400, "Not enough cash")
 
-        payout = 0
-        result_data = {}
+            payout = 0
+            result_data = {}
 
-        if req.game == "coinflip":
-            flip = random.choice(["heads", "tails"])
-            win = flip == req.choice
-            payout = req.bet * 2 if win else 0
-            result_data = {"flip": flip, "win": win}
-
-        elif req.game == "dice":
-            dice1 = random.randint(1, 6)
-            dice2 = random.randint(1, 6)
-            total = dice1 + dice2
-            if req.choice == "over":
-                win = total > 7
+            if req.game == "coinflip":
+                if req.choice not in ("heads", "tails"):
+                    raise HTTPException(400, "Choice must be heads or tails")
+                flip = random.choice(["heads", "tails"])
+                win = flip == req.choice
                 payout = req.bet * 2 if win else 0
-            elif req.choice == "under":
-                win = total < 7
-                payout = req.bet * 2 if win else 0
-            elif req.choice == "seven":
-                win = total == 7
-                payout = req.bet * 5 if win else 0
-            else:
+                result_data = {"flip": flip, "win": win}
+
+            elif req.game == "dice":
+                if req.choice not in ("over", "under", "seven"):
+                    raise HTTPException(400, "Choice must be over, under, or seven")
+                dice1 = random.randint(1, 6)
+                dice2 = random.randint(1, 6)
+                total = dice1 + dice2
+                if req.choice == "over":
+                    win = total > 7
+                    payout = req.bet * 2 if win else 0
+                elif req.choice == "under":
+                    win = total < 7
+                    payout = req.bet * 2 if win else 0
+                elif req.choice == "seven":
+                    win = total == 7
+                    payout = req.bet * 5 if win else 0
+                else:
+                    win = False
+                result_data = {"dice1": dice1, "dice2": dice2, "total": total, "win": win}
+
+            elif req.game == "slots":
+                reels = [random.choice(SLOT_SYMBOLS) for _ in range(3)]
+                combo = "".join(reels)
+                if combo in SLOT_PAYOUTS:
+                    payout = req.bet * SLOT_PAYOUTS[combo]
+                elif reels[0] == reels[1] or reels[1] == reels[2]:
+                    payout = req.bet * SLOT_TWO_MATCH_PAYOUT
+                else:
+                    payout = 0
+                result_data = {"reels": reels, "win": payout > 0}
+
+            elif req.game == "roulette":
+                number = random.choice(ROULETTE_NUMBERS)
                 win = False
-            result_data = {"dice1": dice1, "dice2": dice2, "total": total, "win": win}
+                if req.choice == "red":
+                    win = number in ROULETTE_RED
+                    payout = req.bet * 2 if win else 0
+                elif req.choice == "black":
+                    win = number in ROULETTE_BLACK
+                    payout = req.bet * 2 if win else 0
+                elif req.choice == "even":
+                    win = number != 0 and number % 2 == 0
+                    payout = req.bet * 2 if win else 0
+                elif req.choice == "odd":
+                    win = number % 2 == 1
+                    payout = req.bet * 2 if win else 0
+                else:
+                    try:
+                        chosen_num = int(req.choice)
+                        win = number == chosen_num
+                        payout = req.bet * 36 if win else 0
+                    except ValueError:
+                        pass
+                result_data = {"number": number, "win": win, "color": "red" if number in ROULETTE_RED else "black" if number in ROULETTE_BLACK else "green"}
 
-        elif req.game == "slots":
-            reels = [random.choice(SLOT_SYMBOLS) for _ in range(3)]
-            combo = "".join(reels)
-            if combo in SLOT_PAYOUTS:
-                payout = req.bet * SLOT_PAYOUTS[combo]
-            elif reels[0] == reels[1] or reels[1] == reels[2]:
-                payout = req.bet * SLOT_TWO_MATCH_PAYOUT
-            else:
-                payout = 0
-            result_data = {"reels": reels, "win": payout > 0}
+            net = payout - req.bet
+            new_cash = player["cash"] + net
 
-        elif req.game == "roulette":
-            number = random.choice(ROULETTE_NUMBERS)
-            win = False
-            if req.choice == "red":
-                win = number in ROULETTE_RED
-                payout = req.bet * 2 if win else 0
-            elif req.choice == "black":
-                win = number in ROULETTE_BLACK
-                payout = req.bet * 2 if win else 0
-            elif req.choice == "even":
-                win = number != 0 and number % 2 == 0
-                payout = req.bet * 2 if win else 0
-            elif req.choice == "odd":
-                win = number % 2 == 1
-                payout = req.bet * 2 if win else 0
-            else:
-                try:
-                    chosen_num = int(req.choice)
-                    win = number == chosen_num
-                    payout = req.bet * 36 if win else 0
-                except ValueError:
-                    pass
-            result_data = {"number": number, "win": win, "color": "red" if number in ROULETTE_RED else "black" if number in ROULETTE_BLACK else "green"}
+            await db.execute("UPDATE players SET cash = ? WHERE telegram_id = ?", (new_cash, req.telegram_id))
+            await db.execute(
+                "INSERT INTO casino_log (telegram_id, game, bet, result, payout) VALUES (?,?,?,?,?)",
+                (req.telegram_id, req.game, req.bet, str(result_data), payout),
+            )
+            await db.commit()
 
-        net = payout - req.bet
-        new_cash = player["cash"] + net
+            # Track casino stats
+            await db.execute("UPDATE players SET casino_plays=casino_plays+1 WHERE telegram_id=?", (req.telegram_id,))
+            if payout > 0:
+                await db.execute("UPDATE players SET casino_wins=casino_wins+1 WHERE telegram_id=?", (req.telegram_id,))
+            await db.commit()
 
-        await db.execute("UPDATE players SET cash = ? WHERE telegram_id = ?", (new_cash, req.telegram_id))
-        await db.execute(
-            "INSERT INTO casino_log (telegram_id, game, bet, result, payout) VALUES (?,?,?,?,?)",
-            (req.telegram_id, req.game, req.bet, str(result_data), payout),
-        )
-        await db.commit()
+            await track_action(db, req.telegram_id, "casino_play")
+            if payout > 0:
+                await track_action(db, req.telegram_id, "casino_win")
 
-        # Track casino stats
-        await db.execute("UPDATE players SET casino_plays=casino_plays+1 WHERE telegram_id=?", (req.telegram_id,))
-        if payout > 0:
-            await db.execute("UPDATE players SET casino_wins=casino_wins+1 WHERE telegram_id=?", (req.telegram_id,))
-        await db.commit()
+            player = await get_player(db, req.telegram_id)
 
-        await track_action(db, req.telegram_id, "casino_play")
-        if payout > 0:
-            await track_action(db, req.telegram_id, "casino_win")
+            return {"payout": payout, "net": net, "result": result_data, "player": player}
 
-        player = await get_player(db, req.telegram_id)
-
-        return {"payout": payout, "net": net, "result": result_data, "player": player}
-    finally:
-        await db.close()
+        finally:
+            await db.close()
 
 
 # ── Shop & Character ──
 
 @app.post("/api/shop/buy")
 async def shop_buy(req: ShopBuyRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
 
-        item = SHOP_ITEMS.get(req.item_id)
-        if not item: raise HTTPException(400, "Unknown item")
-        if item.get("case_only"): raise HTTPException(400, "Only from cases")
-        if player["cash"] < item["price"]: raise HTTPException(400, "Not enough cash")
+            item = SHOP_ITEMS.get(req.item_id)
+            if not item: raise HTTPException(400, "Unknown item")
+            if item.get("case_only"): raise HTTPException(400, "Only from cases")
+            if player["cash"] < item["price"]: raise HTTPException(400, "Not enough cash")
 
-        cursor = await db.execute("SELECT id FROM player_inventory WHERE telegram_id=? AND item_id=?", (req.telegram_id, req.item_id))
-        if await cursor.fetchone(): raise HTTPException(400, "Already owned")
+            cursor = await db.execute("SELECT id FROM player_inventory WHERE telegram_id=? AND item_id=?", (req.telegram_id, req.item_id))
+            if await cursor.fetchone(): raise HTTPException(400, "Already owned")
 
-        await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (item["price"], req.telegram_id))
-        await db.execute("INSERT INTO player_inventory (telegram_id, item_id) VALUES (?, ?)", (req.telegram_id, req.item_id))
-        await db.commit()
+            await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (item["price"], req.telegram_id))
+            await db.execute("INSERT INTO player_inventory (telegram_id, item_id) VALUES (?, ?)", (req.telegram_id, req.item_id))
+            await db.commit()
 
-        await track_action(db, req.telegram_id, "shop_buy")
+            await track_action(db, req.telegram_id, "shop_buy")
 
-        player = await get_player(db, req.telegram_id)
-        inventory = await get_inventory(db, req.telegram_id)
-        return {"player": player, "inventory": inventory}
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            inventory = await get_inventory(db, req.telegram_id)
+            return {"player": player, "inventory": inventory}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/shop/equip")
 async def equip_item(req: EquipRequest):
-    db = await get_db()
-    try:
-        item = SHOP_ITEMS.get(req.item_id)
-        if not item: raise HTTPException(400, "Unknown item")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            item = SHOP_ITEMS.get(req.item_id)
+            if not item: raise HTTPException(400, "Unknown item")
 
-        cursor = await db.execute(
-            "SELECT id FROM player_inventory WHERE telegram_id=? AND item_id=?",
-            (req.telegram_id, req.item_id)
-        )
-        if not await cursor.fetchone():
-            raise HTTPException(400, "Item not owned")
-
-        inv = await get_inventory(db, req.telegram_id)
-        for inv_item in inv:
-            inv_cfg = SHOP_ITEMS.get(inv_item["item_id"])
-            if inv_cfg and inv_cfg["slot"] == item["slot"] and inv_item["equipped"]:
-                await db.execute("UPDATE player_inventory SET equipped=0 WHERE id=?", (inv_item["id"],))
-
-        await db.execute(
-            "UPDATE player_inventory SET equipped=1 WHERE telegram_id=? AND item_id=?",
-            (req.telegram_id, req.item_id)
-        )
-
-        allowed_slots = ("hat", "jacket", "accessory", "weapon", "car")
-        slot = item["slot"]
-        if slot in allowed_slots:
-            await db.execute(
-                f"UPDATE player_character SET {slot}=? WHERE telegram_id=?",
-                (req.item_id, req.telegram_id)
+            cursor = await db.execute(
+                "SELECT id FROM player_inventory WHERE telegram_id=? AND item_id=?",
+                (req.telegram_id, req.item_id)
             )
-        await db.commit()
+            if not await cursor.fetchone():
+                raise HTTPException(400, "Item not owned")
 
-        character = await get_character(db, req.telegram_id)
-        inventory = await get_inventory(db, req.telegram_id)
-        return {"character": character, "inventory": inventory}
-    finally:
-        await db.close()
+            inv = await get_inventory(db, req.telegram_id)
+            for inv_item in inv:
+                inv_cfg = SHOP_ITEMS.get(inv_item["item_id"])
+                if inv_cfg and inv_cfg["slot"] == item["slot"] and inv_item["equipped"]:
+                    await db.execute("UPDATE player_inventory SET equipped=0 WHERE id=?", (inv_item["id"],))
+
+            await db.execute(
+                "UPDATE player_inventory SET equipped=1 WHERE telegram_id=? AND item_id=?",
+                (req.telegram_id, req.item_id)
+            )
+
+            allowed_slots = ("hat", "jacket", "accessory", "weapon", "car")
+            slot = item["slot"]
+            if slot in allowed_slots:
+                await db.execute(
+                    f"UPDATE player_character SET {slot}=? WHERE telegram_id=?",
+                    (req.item_id, req.telegram_id)
+                )
+            await db.commit()
+
+            character = await get_character(db, req.telegram_id)
+            inventory = await get_inventory(db, req.telegram_id)
+            return {"character": character, "inventory": inventory}
+
+        finally:
+            await db.close()
 
 
 @app.get("/api/character/{telegram_id}")
@@ -1318,306 +1356,323 @@ async def get_character_info(telegram_id: int):
 
 @app.post("/api/case/buy")
 async def buy_case(req: CaseBuyRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
 
-        case_cfg = CASES.get(req.case_id)
-        if not case_cfg: raise HTTPException(400, "Unknown case")
-        if player["cash"] < case_cfg["price"]: raise HTTPException(400, "Not enough cash")
+            case_cfg = CASES.get(req.case_id)
+            if not case_cfg: raise HTTPException(400, "Unknown case")
+            if player["cash"] < case_cfg["price"]: raise HTTPException(400, "Not enough cash")
 
-        await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (case_cfg["price"], req.telegram_id))
-        await db.execute("INSERT INTO player_cases (telegram_id, case_id) VALUES (?, ?)", (req.telegram_id, req.case_id))
-        await db.commit()
+            await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (case_cfg["price"], req.telegram_id))
+            await db.execute("INSERT INTO player_cases (telegram_id, case_id) VALUES (?, ?)", (req.telegram_id, req.case_id))
+            await db.commit()
 
-        player = await get_player(db, req.telegram_id)
-        player_cases = await get_player_cases(db, req.telegram_id)
-        return {"player": player, "player_cases": player_cases}
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            player_cases = await get_player_cases(db, req.telegram_id)
+            return {"player": player, "player_cases": player_cases}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/case/open")
 async def open_case(req: CaseOpenRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
 
-        # Find the case in player's inventory
-        cursor = await db.execute(
-            "SELECT * FROM player_cases WHERE id=? AND telegram_id=?",
-            (req.player_case_id, req.telegram_id)
-        )
-        pc = await cursor.fetchone()
-        if not pc: raise HTTPException(400, "Case not found")
-        pc = dict(pc)
+            # Find the case in player's inventory
+            cursor = await db.execute(
+                "SELECT * FROM player_cases WHERE id=? AND telegram_id=?",
+                (req.player_case_id, req.telegram_id)
+            )
+            pc = await cursor.fetchone()
+            if not pc: raise HTTPException(400, "Case not found")
+            pc = dict(pc)
 
-        case_cfg = CASES.get(pc["case_id"])
-        if not case_cfg: raise HTTPException(400, "Invalid case")
+            case_cfg = CASES.get(pc["case_id"])
+            if not case_cfg: raise HTTPException(400, "Invalid case")
 
-        # Get owned items to avoid duplicates
-        inventory = await get_inventory(db, req.telegram_id)
-        owned_ids = {i["item_id"] for i in inventory}
+            # Get owned items to avoid duplicates
+            inventory = await get_inventory(db, req.telegram_id)
+            owned_ids = {i["item_id"] for i in inventory}
 
-        # Weighted random selection, re-roll on duplicate
-        # Apply lootbox_master talent: boost weights for rare+ items
-        talents = await get_player_talents(db, req.telegram_id)
-        tb = get_talent_bonuses(talents)
-        lootbox_boost = tb["lootbox_master"]  # % boost for rare+
-        loot = case_cfg["loot"]
-        items = [l["item_id"] for l in loot]
-        weights = []
-        for l in loot:
-            w = l["weight"]
-            if lootbox_boost > 0:
-                item_rarity = SHOP_ITEMS.get(l["item_id"], {}).get("rarity", "common")
-                if item_rarity in ("rare", "epic", "legendary"):
-                    w *= (1 + lootbox_boost / 100.0)
-            weights.append(w)
+            # Weighted random selection, re-roll on duplicate
+            # Apply lootbox_master talent: boost weights for rare+ items
+            talents = await get_player_talents(db, req.telegram_id)
+            tb = get_talent_bonuses(talents)
+            lootbox_boost = tb["lootbox_master"]  # % boost for rare+
+            loot = case_cfg["loot"]
+            items = [l["item_id"] for l in loot]
+            weights = []
+            for l in loot:
+                w = l["weight"]
+                if lootbox_boost > 0:
+                    item_rarity = SHOP_ITEMS.get(l["item_id"], {}).get("rarity", "common")
+                    if item_rarity in ("rare", "epic", "legendary"):
+                        w *= (1 + lootbox_boost / 100.0)
+                weights.append(w)
 
-        won_item_id = None
-        cash_compensation = 0
+            won_item_id = None
+            cash_compensation = 0
 
-        for _ in range(20):  # max 20 re-rolls
-            chosen = random.choices(items, weights=weights, k=1)[0]
-            if chosen not in owned_ids:
-                won_item_id = chosen
-                break
+            for _ in range(20):  # max 20 re-rolls
+                chosen = random.choices(items, weights=weights, k=1)[0]
+                if chosen not in owned_ids:
+                    won_item_id = chosen
+                    break
 
-        if won_item_id:
-            await db.execute("INSERT INTO player_inventory (telegram_id, item_id) VALUES (?, ?)", (req.telegram_id, won_item_id))
-        else:
-            # All items owned — give cash compensation
-            chosen = random.choices(items, weights=weights, k=1)[0]
-            item_cfg = SHOP_ITEMS.get(chosen, {})
-            rarity = item_cfg.get("rarity", "common")
-            rarity_mult = {"common": 1, "uncommon": 2, "rare": 4, "epic": 8, "legendary": 20}
-            cash_compensation = case_cfg["price"] * 0.5 * rarity_mult.get(rarity, 1)
-            await db.execute("UPDATE players SET cash = cash + ? WHERE telegram_id = ?", (cash_compensation, req.telegram_id))
+            if won_item_id:
+                await db.execute("INSERT INTO player_inventory (telegram_id, item_id) VALUES (?, ?)", (req.telegram_id, won_item_id))
+            else:
+                # All items owned — give cash compensation
+                chosen = random.choices(items, weights=weights, k=1)[0]
+                item_cfg = SHOP_ITEMS.get(chosen, {})
+                rarity = item_cfg.get("rarity", "common")
+                rarity_mult = {"common": 1, "uncommon": 2, "rare": 4, "epic": 8, "legendary": 20}
+                cash_compensation = case_cfg["price"] * 0.5 * rarity_mult.get(rarity, 1)
+                await db.execute("UPDATE players SET cash = cash + ? WHERE telegram_id = ?", (cash_compensation, req.telegram_id))
 
-        # Remove the case
-        await db.execute("DELETE FROM player_cases WHERE id=?", (req.player_case_id,))
-        await db.commit()
+            # Remove the case
+            await db.execute("DELETE FROM player_cases WHERE id=?", (req.player_case_id,))
+            await db.commit()
 
-        await track_action(db, req.telegram_id, "case_open")
+            await track_action(db, req.telegram_id, "case_open")
 
-        player = await get_player(db, req.telegram_id)
-        inventory = await get_inventory(db, req.telegram_id)
-        player_cases = await get_player_cases(db, req.telegram_id)
+            player = await get_player(db, req.telegram_id)
+            inventory = await get_inventory(db, req.telegram_id)
+            player_cases = await get_player_cases(db, req.telegram_id)
 
-        won_item = SHOP_ITEMS.get(won_item_id, {}) if won_item_id else None
+            won_item = SHOP_ITEMS.get(won_item_id, {}) if won_item_id else None
 
-        return {
-            "player": player,
-            "inventory": inventory,
-            "player_cases": player_cases,
-            "won_item_id": won_item_id,
-            "won_item": won_item,
-            "cash_compensation": cash_compensation,
-        }
-    finally:
-        await db.close()
+            return {
+                "player": player,
+                "inventory": inventory,
+                "player_cases": player_cases,
+                "won_item_id": won_item_id,
+                "won_item": won_item,
+                "cash_compensation": cash_compensation,
+            }
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/case/spin")
 async def spin_case(req: CaseSpinRequest):
     """Buy + open case in one action."""
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
 
-        case_cfg = CASES.get(req.case_id)
-        if not case_cfg: raise HTTPException(400, "Unknown case")
-        if player["cash"] < case_cfg["price"]: raise HTTPException(400, "Not enough cash")
+            case_cfg = CASES.get(req.case_id)
+            if not case_cfg: raise HTTPException(400, "Unknown case")
+            if player["cash"] < case_cfg["price"]: raise HTTPException(400, "Not enough cash")
 
-        # Deduct cash
-        await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (case_cfg["price"], req.telegram_id))
+            # Deduct cash
+            await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (case_cfg["price"], req.telegram_id))
 
-        # Get owned items to avoid duplicates
-        inventory = await get_inventory(db, req.telegram_id)
-        owned_ids = {i["item_id"] for i in inventory}
+            # Get owned items to avoid duplicates
+            inventory = await get_inventory(db, req.telegram_id)
+            owned_ids = {i["item_id"] for i in inventory}
 
-        # Weighted random selection with lootbox_master talent boost
-        talents = await get_player_talents(db, req.telegram_id)
-        tb = get_talent_bonuses(talents)
-        lootbox_boost = tb["lootbox_master"]
-        loot = case_cfg["loot"]
-        items = [l["item_id"] for l in loot]
-        weights = []
-        for l in loot:
-            w = l["weight"]
-            if lootbox_boost > 0:
-                item_rarity = SHOP_ITEMS.get(l["item_id"], {}).get("rarity", "common")
-                if item_rarity in ("rare", "epic", "legendary"):
-                    w *= (1 + lootbox_boost / 100.0)
-            weights.append(w)
+            # Weighted random selection with lootbox_master talent boost
+            talents = await get_player_talents(db, req.telegram_id)
+            tb = get_talent_bonuses(talents)
+            lootbox_boost = tb["lootbox_master"]
+            loot = case_cfg["loot"]
+            items = [l["item_id"] for l in loot]
+            weights = []
+            for l in loot:
+                w = l["weight"]
+                if lootbox_boost > 0:
+                    item_rarity = SHOP_ITEMS.get(l["item_id"], {}).get("rarity", "common")
+                    if item_rarity in ("rare", "epic", "legendary"):
+                        w *= (1 + lootbox_boost / 100.0)
+                weights.append(w)
 
-        won_item_id = None
-        cash_compensation = 0
+            won_item_id = None
+            cash_compensation = 0
 
-        for _ in range(20):
-            chosen = random.choices(items, weights=weights, k=1)[0]
-            if chosen not in owned_ids:
-                won_item_id = chosen
-                break
+            for _ in range(20):
+                chosen = random.choices(items, weights=weights, k=1)[0]
+                if chosen not in owned_ids:
+                    won_item_id = chosen
+                    break
 
-        if won_item_id:
-            await db.execute("INSERT INTO player_inventory (telegram_id, item_id) VALUES (?, ?)", (req.telegram_id, won_item_id))
-        else:
-            chosen = random.choices(items, weights=weights, k=1)[0]
-            item_cfg = SHOP_ITEMS.get(chosen, {})
-            rarity = item_cfg.get("rarity", "common")
-            rarity_mult = {"common": 1, "uncommon": 2, "rare": 4, "epic": 8, "legendary": 20}
-            cash_compensation = case_cfg["price"] * 0.5 * rarity_mult.get(rarity, 1)
-            await db.execute("UPDATE players SET cash = cash + ? WHERE telegram_id = ?", (cash_compensation, req.telegram_id))
+            if won_item_id:
+                await db.execute("INSERT INTO player_inventory (telegram_id, item_id) VALUES (?, ?)", (req.telegram_id, won_item_id))
+            else:
+                chosen = random.choices(items, weights=weights, k=1)[0]
+                item_cfg = SHOP_ITEMS.get(chosen, {})
+                rarity = item_cfg.get("rarity", "common")
+                rarity_mult = {"common": 1, "uncommon": 2, "rare": 4, "epic": 8, "legendary": 20}
+                cash_compensation = case_cfg["price"] * 0.5 * rarity_mult.get(rarity, 1)
+                await db.execute("UPDATE players SET cash = cash + ? WHERE telegram_id = ?", (cash_compensation, req.telegram_id))
 
-        await db.commit()
-        await track_action(db, req.telegram_id, "case_open")
+            await db.commit()
+            await track_action(db, req.telegram_id, "case_open")
 
-        player = await get_player(db, req.telegram_id)
-        inventory = await get_inventory(db, req.telegram_id)
-        player_cases = await get_player_cases(db, req.telegram_id)
-        won_item = SHOP_ITEMS.get(won_item_id, {}) if won_item_id else None
+            player = await get_player(db, req.telegram_id)
+            inventory = await get_inventory(db, req.telegram_id)
+            player_cases = await get_player_cases(db, req.telegram_id)
+            won_item = SHOP_ITEMS.get(won_item_id, {}) if won_item_id else None
 
-        return {
-            "player": player,
-            "inventory": inventory,
-            "player_cases": player_cases,
-            "won_item_id": won_item_id,
-            "won_item": won_item,
-            "cash_compensation": cash_compensation,
-        }
-    finally:
-        await db.close()
+            return {
+                "player": player,
+                "inventory": inventory,
+                "player_cases": player_cases,
+                "won_item_id": won_item_id,
+                "won_item": won_item,
+                "cash_compensation": cash_compensation,
+            }
+        finally:
+            await db.close()
 
 
 # ── Market ──
 
 @app.post("/api/market/sell")
 async def market_sell(req: MarketListRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        if req.price < 100: raise HTTPException(400, "Min price is $100")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            validate_amount(req.price, "price")
+            if req.price < 100: raise HTTPException(400, "Min price is $100")
+            if req.price > 10_000_000: raise HTTPException(400, "Max price is $10,000,000")
 
-        # Check owns item and not equipped
-        cursor = await db.execute(
-            "SELECT * FROM player_inventory WHERE telegram_id=? AND item_id=?",
-            (req.telegram_id, req.item_id)
-        )
-        inv = await cursor.fetchone()
-        if not inv: raise HTTPException(400, "Item not owned")
-        if inv["equipped"]: raise HTTPException(400, "Unequip first")
+            # Check owns item and not equipped
+            cursor = await db.execute(
+                "SELECT * FROM player_inventory WHERE telegram_id=? AND item_id=?",
+                (req.telegram_id, req.item_id)
+            )
+            inv = await cursor.fetchone()
+            if not inv: raise HTTPException(400, "Item not owned")
+            if inv["equipped"]: raise HTTPException(400, "Unequip first")
 
-        # Check not already listed
-        cursor = await db.execute(
-            "SELECT id FROM market_listings WHERE seller_id=? AND item_id=?",
-            (req.telegram_id, req.item_id)
-        )
-        if await cursor.fetchone(): raise HTTPException(400, "Already listed")
+            # Check not already listed
+            cursor = await db.execute(
+                "SELECT id FROM market_listings WHERE seller_id=? AND item_id=?",
+                (req.telegram_id, req.item_id)
+            )
+            if await cursor.fetchone(): raise HTTPException(400, "Already listed")
 
-        # Remove from inventory, add to market
-        await db.execute("DELETE FROM player_inventory WHERE telegram_id=? AND item_id=?", (req.telegram_id, req.item_id))
-        await db.execute(
-            "INSERT INTO market_listings (seller_id, item_id, price) VALUES (?, ?, ?)",
-            (req.telegram_id, req.item_id, req.price)
-        )
+            # Remove from inventory, add to market
+            await db.execute("DELETE FROM player_inventory WHERE telegram_id=? AND item_id=?", (req.telegram_id, req.item_id))
+            await db.execute(
+                "INSERT INTO market_listings (seller_id, item_id, price) VALUES (?, ?, ?)",
+                (req.telegram_id, req.item_id, req.price)
+            )
 
-        # Update character if was equipped in slot
-        item_cfg = SHOP_ITEMS.get(req.item_id)
-        if item_cfg:
-            slot = item_cfg["slot"]
-            if slot in ("hat", "jacket", "accessory", "weapon", "car"):
-                await db.execute(f"UPDATE player_character SET {slot}='none' WHERE telegram_id=? AND {slot}=?", (req.telegram_id, req.item_id))
+            # Update character if was equipped in slot
+            item_cfg = SHOP_ITEMS.get(req.item_id)
+            if item_cfg:
+                slot = item_cfg["slot"]
+                if slot in ("hat", "jacket", "accessory", "weapon", "car"):
+                    await db.execute(f"UPDATE player_character SET {slot}='none' WHERE telegram_id=? AND {slot}=?", (req.telegram_id, req.item_id))
 
-        await db.execute("UPDATE players SET market_sales=market_sales+1 WHERE telegram_id=?", (req.telegram_id,))
-        await db.commit()
+            await db.execute("UPDATE players SET market_sales=market_sales+1 WHERE telegram_id=?", (req.telegram_id,))
+            await db.commit()
 
-        inventory = await get_inventory(db, req.telegram_id)
-        cursor = await db.execute("SELECT * FROM market_listings WHERE seller_id=?", (req.telegram_id,))
-        my_listings = [dict(r) for r in await cursor.fetchall()]
+            inventory = await get_inventory(db, req.telegram_id)
+            cursor = await db.execute("SELECT * FROM market_listings WHERE seller_id=?", (req.telegram_id,))
+            my_listings = [dict(r) for r in await cursor.fetchall()]
 
-        return {"inventory": inventory, "my_listings": my_listings}
-    finally:
-        await db.close()
+            return {"inventory": inventory, "my_listings": my_listings}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/market/buy")
 async def market_buy(req: MarketBuyRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned_biz = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned_biz)
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned_biz = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned_biz)
 
-        cursor = await db.execute("SELECT * FROM market_listings WHERE id=?", (req.listing_id,))
-        listing = await cursor.fetchone()
-        if not listing: raise HTTPException(400, "Listing not found")
-        listing = dict(listing)
+            cursor = await db.execute("SELECT * FROM market_listings WHERE id=?", (req.listing_id,))
+            listing = await cursor.fetchone()
+            if not listing: raise HTTPException(400, "Listing not found")
+            listing = dict(listing)
 
-        if listing["seller_id"] == req.telegram_id: raise HTTPException(400, "Can't buy own listing")
-        if player["cash"] < listing["price"]: raise HTTPException(400, "Not enough cash")
+            if listing["seller_id"] == req.telegram_id: raise HTTPException(400, "Can't buy own listing")
+            if player["cash"] < listing["price"]: raise HTTPException(400, "Not enough cash")
 
-        # Check buyer doesn't already own this item
-        cursor = await db.execute(
-            "SELECT id FROM player_inventory WHERE telegram_id=? AND item_id=?",
-            (req.telegram_id, listing["item_id"])
-        )
-        if await cursor.fetchone(): raise HTTPException(400, "Already own this item")
+            # Check buyer doesn't already own this item
+            cursor = await db.execute(
+                "SELECT id FROM player_inventory WHERE telegram_id=? AND item_id=?",
+                (req.telegram_id, listing["item_id"])
+            )
+            if await cursor.fetchone(): raise HTTPException(400, "Already own this item")
 
-        # Transfer — VIP gets reduced commission
-        seller = await get_player(db, listing["seller_id"])
-        commission = VIP_MARKET_COMMISSION if (seller and is_vip_active(seller)) else MARKET_COMMISSION
-        seller_gets = listing["price"] * (1 - commission)
-        await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (listing["price"], req.telegram_id))
-        await db.execute("UPDATE players SET cash = cash + ? WHERE telegram_id = ?", (seller_gets, listing["seller_id"]))
-        await db.execute("INSERT INTO player_inventory (telegram_id, item_id) VALUES (?, ?)", (req.telegram_id, listing["item_id"]))
-        await db.execute("DELETE FROM market_listings WHERE id=?", (req.listing_id,))
-        await db.commit()
+            # Atomically remove listing first to prevent double-buy
+            cursor = await db.execute("DELETE FROM market_listings WHERE id=?", (req.listing_id,))
+            if cursor.rowcount == 0:
+                raise HTTPException(400, "Listing already sold")
 
-        player = await get_player(db, req.telegram_id)
-        inventory = await get_inventory(db, req.telegram_id)
+            # Transfer — VIP gets reduced commission
+            seller = await get_player(db, listing["seller_id"])
+            commission = VIP_MARKET_COMMISSION if (seller and is_vip_active(seller)) else MARKET_COMMISSION
+            seller_gets = listing["price"] * (1 - commission)
+            await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (listing["price"], req.telegram_id))
+            await db.execute("UPDATE players SET cash = cash + ? WHERE telegram_id = ?", (seller_gets, listing["seller_id"]))
+            await db.execute("INSERT INTO player_inventory (telegram_id, item_id) VALUES (?, ?)", (req.telegram_id, listing["item_id"]))
+            await db.commit()
 
-        return {"player": player, "inventory": inventory, "bought_item_id": listing["item_id"]}
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            inventory = await get_inventory(db, req.telegram_id)
+
+            return {"player": player, "inventory": inventory, "bought_item_id": listing["item_id"]}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/market/cancel")
 async def market_cancel(req: MarketListRequest):
     """Cancel a listing — return item to inventory."""
-    db = await get_db()
-    try:
-        cursor = await db.execute(
-            "SELECT * FROM market_listings WHERE seller_id=? AND item_id=?",
-            (req.telegram_id, req.item_id)
-        )
-        listing = await cursor.fetchone()
-        if not listing: raise HTTPException(400, "Listing not found")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            cursor = await db.execute(
+                "SELECT * FROM market_listings WHERE seller_id=? AND item_id=?",
+                (req.telegram_id, req.item_id)
+            )
+            listing = await cursor.fetchone()
+            if not listing: raise HTTPException(400, "Listing not found")
 
-        await db.execute("DELETE FROM market_listings WHERE id=?", (listing["id"],))
-        await db.execute(
-            "INSERT OR IGNORE INTO player_inventory (telegram_id, item_id) VALUES (?, ?)",
-            (req.telegram_id, req.item_id)
-        )
-        await db.commit()
+            await db.execute("DELETE FROM market_listings WHERE id=?", (listing["id"],))
+            await db.execute(
+                "INSERT OR IGNORE INTO player_inventory (telegram_id, item_id) VALUES (?, ?)",
+                (req.telegram_id, req.item_id)
+            )
+            await db.commit()
 
-        inventory = await get_inventory(db, req.telegram_id)
-        cursor = await db.execute("SELECT * FROM market_listings WHERE seller_id=?", (req.telegram_id,))
-        my_listings = [dict(r) for r in await cursor.fetchall()]
+            inventory = await get_inventory(db, req.telegram_id)
+            cursor = await db.execute("SELECT * FROM market_listings WHERE seller_id=?", (req.telegram_id,))
+            my_listings = [dict(r) for r in await cursor.fetchall()]
 
-        return {"inventory": inventory, "my_listings": my_listings}
-    finally:
-        await db.close()
+            return {"inventory": inventory, "my_listings": my_listings}
+
+        finally:
+            await db.close()
 
 
 @app.get("/api/market")
@@ -1659,223 +1714,237 @@ def get_gang_raid_reduction(gang_ups):
 
 @app.post("/api/gang/create")
 async def create_gang(req: GangCreateRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        if player["gang_id"]: raise HTTPException(400, "Already in a gang")
-        if len(req.name) < 2 or len(req.tag) < 1 or len(req.tag) > 4: raise HTTPException(400, "Invalid name/tag")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            if player["gang_id"]: raise HTTPException(400, "Already in a gang")
+            if len(req.name) < 2 or len(req.tag) < 1 or len(req.tag) > 4: raise HTTPException(400, "Invalid name/tag")
 
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
-        if player["cash"] < GANG_CREATE_COST: raise HTTPException(400, f"Need ${GANG_CREATE_COST:,}")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
+            if player["cash"] < GANG_CREATE_COST: raise HTTPException(400, f"Need ${GANG_CREATE_COST:,}")
 
-        cursor = await db.execute(
-            "INSERT INTO gangs (name, tag, leader_id) VALUES (?, ?, ?)",
-            (req.name, req.tag[:4], req.telegram_id),
-        )
-        gang_id = cursor.lastrowid
-        await db.execute("INSERT INTO gang_members (telegram_id, gang_id, role) VALUES (?, ?, 'leader')", (req.telegram_id, gang_id))
-        await db.execute("UPDATE players SET gang_id=?, cash=cash-? WHERE telegram_id=?", (gang_id, GANG_CREATE_COST, req.telegram_id))
-        await gang_log(db, gang_id, f"🎉 {player['username']} создал банду")
-        await db.commit()
-        await track_action(db, req.telegram_id, "gang_join")
+            cursor = await db.execute(
+                "INSERT INTO gangs (name, tag, leader_id) VALUES (?, ?, ?)",
+                (req.name, req.tag[:4], req.telegram_id),
+            )
+            gang_id = cursor.lastrowid
+            await db.execute("INSERT INTO gang_members (telegram_id, gang_id, role) VALUES (?, ?, 'leader')", (req.telegram_id, gang_id))
+            await db.execute("UPDATE players SET gang_id=?, cash=cash-? WHERE telegram_id=?", (gang_id, GANG_CREATE_COST, req.telegram_id))
+            await gang_log(db, gang_id, f"🎉 {player['username']} создал банду")
+            await db.commit()
+            await track_action(db, req.telegram_id, "gang_join")
 
-        player = await get_player(db, req.telegram_id)
-        return {"player": player, "gang_id": gang_id, "gang_name": req.name}
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            return {"player": player, "gang_id": gang_id, "gang_name": req.name}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/gang/join")
 async def join_gang(req: GangJoinRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        if player["gang_id"]: raise HTTPException(400, "Already in a gang")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            if player["gang_id"]: raise HTTPException(400, "Already in a gang")
 
-        cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (req.gang_id,))
-        gang = await cursor.fetchone()
-        if not gang: raise HTTPException(404, "Gang not found")
+            cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (req.gang_id,))
+            gang = await cursor.fetchone()
+            if not gang: raise HTTPException(404, "Gang not found")
 
-        cursor = await db.execute("SELECT COUNT(*) as cnt FROM gang_members WHERE gang_id=?", (req.gang_id,))
-        count = (await cursor.fetchone())["cnt"]
-        if count >= GANG_MAX_MEMBERS: raise HTTPException(400, "Gang is full")
+            cursor = await db.execute("SELECT COUNT(*) as cnt FROM gang_members WHERE gang_id=?", (req.gang_id,))
+            count = (await cursor.fetchone())["cnt"]
+            if count >= GANG_MAX_MEMBERS: raise HTTPException(400, "Gang is full")
 
-        await db.execute("INSERT INTO gang_members (telegram_id, gang_id) VALUES (?, ?)", (req.telegram_id, req.gang_id))
-        await db.execute("UPDATE players SET gang_id=? WHERE telegram_id=?", (req.gang_id, req.telegram_id))
-        await db.execute("UPDATE gangs SET power=power+1 WHERE id=?", (req.gang_id,))
-        await gang_log(db, req.gang_id, f"👤 {player['username']} вступил в банду")
-        await db.commit()
-        await track_action(db, req.telegram_id, "gang_join")
+            await db.execute("INSERT INTO gang_members (telegram_id, gang_id) VALUES (?, ?)", (req.telegram_id, req.gang_id))
+            await db.execute("UPDATE players SET gang_id=? WHERE telegram_id=?", (req.gang_id, req.telegram_id))
+            await db.execute("UPDATE gangs SET power=power+1 WHERE id=?", (req.gang_id,))
+            await gang_log(db, req.gang_id, f"👤 {player['username']} вступил в банду")
+            await db.commit()
+            await track_action(db, req.telegram_id, "gang_join")
 
-        player = await get_player(db, req.telegram_id)
-        return {"player": player, "gang": dict(gang)}
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            return {"player": player, "gang": dict(gang)}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/gang/leave")
 async def leave_gang(req: GangLeaveRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        if not player["gang_id"]: raise HTTPException(400, "Not in a gang")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            if not player["gang_id"]: raise HTTPException(400, "Not in a gang")
 
-        gang_id = player["gang_id"]
-        cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
-        member = await cursor.fetchone()
-        is_leader = member and member["role"] == "leader"
+            gang_id = player["gang_id"]
+            cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
+            member = await cursor.fetchone()
+            is_leader = member and member["role"] == "leader"
 
-        await db.execute("DELETE FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
-        await db.execute("UPDATE players SET gang_id=0 WHERE telegram_id=?", (req.telegram_id,))
-        await db.execute("UPDATE gangs SET power=MAX(0,power-1) WHERE id=?", (gang_id,))
-        await gang_log(db, gang_id, f"🚪 {player['username']} покинул банду")
+            await db.execute("DELETE FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
+            await db.execute("UPDATE players SET gang_id=0 WHERE telegram_id=?", (req.telegram_id,))
+            await db.execute("UPDATE gangs SET power=MAX(0,power-1) WHERE id=?", (gang_id,))
+            await gang_log(db, gang_id, f"🚪 {player['username']} покинул банду")
 
-        if is_leader:
-            cursor = await db.execute("SELECT telegram_id FROM gang_members WHERE gang_id=? ORDER BY joined_at ASC LIMIT 1", (gang_id,))
-            new_leader = await cursor.fetchone()
-            if new_leader:
-                await db.execute("UPDATE gang_members SET role='leader' WHERE telegram_id=?", (new_leader["telegram_id"],))
-                await db.execute("UPDATE gangs SET leader_id=? WHERE id=?", (new_leader["telegram_id"], gang_id))
-                await gang_log(db, gang_id, f"👑 Новый лидер назначен")
-            else:
-                await db.execute("DELETE FROM gangs WHERE id=?", (gang_id,))
-                await db.execute("DELETE FROM gang_upgrades WHERE gang_id=?", (gang_id,))
-                await db.execute("UPDATE territories SET owner_gang_id=NULL WHERE owner_gang_id=?", (gang_id,))
+            if is_leader:
+                cursor = await db.execute("SELECT telegram_id FROM gang_members WHERE gang_id=? ORDER BY joined_at ASC LIMIT 1", (gang_id,))
+                new_leader = await cursor.fetchone()
+                if new_leader:
+                    await db.execute("UPDATE gang_members SET role='leader' WHERE telegram_id=?", (new_leader["telegram_id"],))
+                    await db.execute("UPDATE gangs SET leader_id=? WHERE id=?", (new_leader["telegram_id"], gang_id))
+                    await gang_log(db, gang_id, f"👑 Новый лидер назначен")
+                else:
+                    await db.execute("DELETE FROM gangs WHERE id=?", (gang_id,))
+                    await db.execute("DELETE FROM gang_upgrades WHERE gang_id=?", (gang_id,))
+                    await db.execute("UPDATE territories SET owner_gang_id=NULL WHERE owner_gang_id=?", (gang_id,))
 
-        await db.commit()
-        player = await get_player(db, req.telegram_id)
-        return {"player": player}
-    finally:
-        await db.close()
+            await db.commit()
+            player = await get_player(db, req.telegram_id)
+            return {"player": player}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/gang/kick")
 async def kick_member(req: GangKickRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player or not player["gang_id"]: raise HTTPException(400, "Not in a gang")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player or not player["gang_id"]: raise HTTPException(400, "Not in a gang")
 
-        cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
-        member = await cursor.fetchone()
-        if not member or member["role"] != "leader": raise HTTPException(403, "Only leader can kick")
+            cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
+            member = await cursor.fetchone()
+            if not member or member["role"] != "leader": raise HTTPException(403, "Only leader can kick")
 
-        if req.target_id == req.telegram_id: raise HTTPException(400, "Cannot kick yourself")
+            if req.target_id == req.telegram_id: raise HTTPException(400, "Cannot kick yourself")
 
-        cursor = await db.execute("SELECT telegram_id FROM gang_members WHERE telegram_id=? AND gang_id=?", (req.target_id, player["gang_id"]))
-        target = await cursor.fetchone()
-        if not target: raise HTTPException(404, "Member not found")
+            cursor = await db.execute("SELECT telegram_id FROM gang_members WHERE telegram_id=? AND gang_id=?", (req.target_id, player["gang_id"]))
+            target = await cursor.fetchone()
+            if not target: raise HTTPException(404, "Member not found")
 
-        target_player = await get_player(db, req.target_id)
-        await db.execute("DELETE FROM gang_members WHERE telegram_id=?", (req.target_id,))
-        await db.execute("UPDATE players SET gang_id=0 WHERE telegram_id=?", (req.target_id,))
-        await db.execute("UPDATE gangs SET power=MAX(0,power-1) WHERE id=?", (player["gang_id"],))
-        await gang_log(db, player["gang_id"], f"❌ {target_player['username']} кикнут из банды")
-        await db.commit()
-        return {"ok": True}
-    finally:
-        await db.close()
+            target_player = await get_player(db, req.target_id)
+            await db.execute("DELETE FROM gang_members WHERE telegram_id=?", (req.target_id,))
+            await db.execute("UPDATE players SET gang_id=0 WHERE telegram_id=?", (req.target_id,))
+            await db.execute("UPDATE gangs SET power=MAX(0,power-1) WHERE id=?", (player["gang_id"],))
+            await gang_log(db, player["gang_id"], f"❌ {target_player['username']} кикнут из банды")
+            await db.commit()
+            return {"ok": True}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/gang/deposit")
 async def gang_deposit(req: GangDepositRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player or not player["gang_id"]: raise HTTPException(400, "Not in a gang")
-        if req.amount <= 0: raise HTTPException(400, "Invalid amount")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player or not player["gang_id"]: raise HTTPException(400, "Not in a gang")
+            validate_amount(req.amount, "amount")
 
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
-        if player["cash"] < req.amount: raise HTTPException(400, "Not enough cash")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
+            if player["cash"] < req.amount: raise HTTPException(400, "Not enough cash")
 
-        await db.execute("UPDATE players SET cash=cash-? WHERE telegram_id=?", (req.amount, req.telegram_id))
-        await db.execute("UPDATE gangs SET cash_bank=cash_bank+? WHERE id=?", (req.amount, player["gang_id"]))
-        await gang_log(db, player["gang_id"], f"💰 {player['username']} внёс ${int(req.amount):,}")
-        await db.commit()
+            await db.execute("UPDATE players SET cash=cash-? WHERE telegram_id=?", (req.amount, req.telegram_id))
+            await db.execute("UPDATE gangs SET cash_bank=cash_bank+? WHERE id=?", (req.amount, player["gang_id"]))
+            await gang_log(db, player["gang_id"], f"💰 {player['username']} внёс ${int(req.amount):,}")
+            await db.commit()
 
-        player = await get_player(db, req.telegram_id)
-        cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (player["gang_id"],))
-        gang = dict(await cursor.fetchone())
-        return {"player": player, "gang": gang}
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (player["gang_id"],))
+            gang = dict(await cursor.fetchone())
+            return {"player": player, "gang": gang}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/gang/withdraw")
 async def gang_withdraw(req: GangWithdrawRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player or not player["gang_id"]: raise HTTPException(400, "Not in a gang")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player or not player["gang_id"]: raise HTTPException(400, "Not in a gang")
 
-        cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
-        member = await cursor.fetchone()
-        if not member or member["role"] != "leader": raise HTTPException(403, "Only leader can withdraw")
+            cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
+            member = await cursor.fetchone()
+            if not member or member["role"] != "leader": raise HTTPException(403, "Only leader can withdraw")
 
-        if req.amount <= 0: raise HTTPException(400, "Invalid amount")
+            validate_amount(req.amount, "amount")
 
-        cursor = await db.execute("SELECT cash_bank FROM gangs WHERE id=?", (player["gang_id"],))
-        gang = await cursor.fetchone()
-        if gang["cash_bank"] < req.amount: raise HTTPException(400, "Not enough in bank")
+            cursor = await db.execute("SELECT cash_bank FROM gangs WHERE id=?", (player["gang_id"],))
+            gang = await cursor.fetchone()
+            if gang["cash_bank"] < req.amount: raise HTTPException(400, "Not enough in bank")
 
-        await db.execute("UPDATE gangs SET cash_bank=cash_bank-? WHERE id=?", (req.amount, player["gang_id"]))
-        await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (req.amount, req.telegram_id))
-        await gang_log(db, player["gang_id"], f"💸 Лидер снял ${int(req.amount):,} из банка")
-        await db.commit()
+            await db.execute("UPDATE gangs SET cash_bank=cash_bank-? WHERE id=?", (req.amount, player["gang_id"]))
+            await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (req.amount, req.telegram_id))
+            await gang_log(db, player["gang_id"], f"💸 Лидер снял ${int(req.amount):,} из банка")
+            await db.commit()
 
-        player = await get_player(db, req.telegram_id)
-        cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (player["gang_id"],))
-        gang = dict(await cursor.fetchone())
-        return {"player": player, "gang": gang}
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (player["gang_id"],))
+            gang = dict(await cursor.fetchone())
+            return {"player": player, "gang": gang}
+
+        finally:
+            await db.close()
 
 
 @app.post("/api/gang/upgrade")
 async def gang_upgrade(req: GangUpgradeRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player or not player["gang_id"]: raise HTTPException(400, "Not in a gang")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player or not player["gang_id"]: raise HTTPException(400, "Not in a gang")
 
-        cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
-        member = await cursor.fetchone()
-        if not member or member["role"] != "leader": raise HTTPException(403, "Only leader can upgrade")
+            cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
+            member = await cursor.fetchone()
+            if not member or member["role"] != "leader": raise HTTPException(403, "Only leader can upgrade")
 
-        cfg = GANG_UPGRADES.get(req.upgrade_id)
-        if not cfg: raise HTTPException(400, "Unknown upgrade")
+            cfg = GANG_UPGRADES.get(req.upgrade_id)
+            if not cfg: raise HTTPException(400, "Unknown upgrade")
 
-        gang_ups = await get_gang_upgrades(db, player["gang_id"])
-        current_level = gang_ups.get(req.upgrade_id, 0)
-        if current_level >= cfg["max_level"]: raise HTTPException(400, "Max level reached")
+            gang_ups = await get_gang_upgrades(db, player["gang_id"])
+            current_level = gang_ups.get(req.upgrade_id, 0)
+            if current_level >= cfg["max_level"]: raise HTTPException(400, "Max level reached")
 
-        cost = cfg["costs"][current_level]
-        cursor = await db.execute("SELECT cash_bank FROM gangs WHERE id=?", (player["gang_id"],))
-        gang = await cursor.fetchone()
-        if gang["cash_bank"] < cost: raise HTTPException(400, f"Need ${cost:,} in gang bank")
+            cost = cfg["costs"][current_level]
+            cursor = await db.execute("SELECT cash_bank FROM gangs WHERE id=?", (player["gang_id"],))
+            gang = await cursor.fetchone()
+            if gang["cash_bank"] < cost: raise HTTPException(400, f"Need ${cost:,} in gang bank")
 
-        await db.execute("UPDATE gangs SET cash_bank=cash_bank-? WHERE id=?", (cost, player["gang_id"]))
-        await db.execute(
-            "INSERT INTO gang_upgrades (gang_id, upgrade_id, level) VALUES (?,?,1) ON CONFLICT(gang_id, upgrade_id) DO UPDATE SET level=?",
-            (player["gang_id"], req.upgrade_id, current_level + 1),
-        )
+            await db.execute("UPDATE gangs SET cash_bank=cash_bank-? WHERE id=?", (cost, player["gang_id"]))
+            await db.execute(
+                "INSERT INTO gang_upgrades (gang_id, upgrade_id, level) VALUES (?,?,1) ON CONFLICT(gang_id, upgrade_id) DO UPDATE SET level=?",
+                (player["gang_id"], req.upgrade_id, current_level + 1),
+            )
 
-        new_level = current_level + 1
-        bonus = cfg["bonuses"][new_level - 1]
-        await gang_log(db, player["gang_id"], f"⬆️ {cfg['emoji']} {cfg['name']} улучшен до ур.{new_level} (+{bonus}{'%' if cfg['bonus_type'] != 'attack_power' else ''})")
-        await db.commit()
+            new_level = current_level + 1
+            bonus = cfg["bonuses"][new_level - 1]
+            await gang_log(db, player["gang_id"], f"⬆️ {cfg['emoji']} {cfg['name']} улучшен до ур.{new_level} (+{bonus}{'%' if cfg['bonus_type'] != 'attack_power' else ''})")
+            await db.commit()
 
-        cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (player["gang_id"],))
-        gang = dict(await cursor.fetchone())
-        gang_ups = await get_gang_upgrades(db, player["gang_id"])
-        return {"gang": gang, "gang_upgrades": gang_ups}
-    finally:
-        await db.close()
+            cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (player["gang_id"],))
+            gang = dict(await cursor.fetchone())
+            gang_ups = await get_gang_upgrades(db, player["gang_id"])
+            return {"gang": gang, "gang_upgrades": gang_ups}
+
+        finally:
+            await db.close()
 
 
 @app.get("/api/gangs")
@@ -1914,111 +1983,123 @@ async def get_gang(gang_id: int):
 
 @app.post("/api/pvp/attack")
 async def pvp_attack(req: PvpAttackRequest):
-    db = await get_db()
-    try:
-        attacker = await get_player(db, req.telegram_id)
-        if not attacker: raise HTTPException(404, "Player not found")
-        defender = await get_player(db, req.target_id)
-        if not defender: raise HTTPException(404, "Target not found")
-        if req.telegram_id == req.target_id: raise HTTPException(400, "Can't attack yourself")
-        if attacker["cash"] < PVP_MIN_CASH_TO_ATTACK: raise HTTPException(400, "Need more cash")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            attacker = await get_player(db, req.telegram_id)
+            if not attacker: raise HTTPException(404, "Player not found")
+            defender = await get_player(db, req.target_id)
+            if not defender: raise HTTPException(404, "Target not found")
+            if req.telegram_id == req.target_id: raise HTTPException(400, "Can't attack yourself")
+            if attacker["cash"] < PVP_MIN_CASH_TO_ATTACK: raise HTTPException(400, "Need more cash")
 
-        a_owned = await get_owned_businesses(db, req.telegram_id)
-        d_owned = await get_owned_businesses(db, req.target_id)
-        attacker, _ = await sync_earnings(db, attacker, a_owned)
-        defender, _ = await sync_earnings(db, defender, d_owned)
+            # PvP cooldown check
+            now = time.time()
+            if attacker.get("pvp_cooldown_ts", 0) > now:
+                raise HTTPException(400, f"PvP cooldown: {int(attacker['pvp_cooldown_ts'] - now)}s")
 
-        talents = await get_player_talents(db, req.telegram_id)
-        tb = get_talent_bonuses(talents)
-        a_power = get_player_level(a_owned) + attacker["reputation_fear"] + tb["street_fighter"]
-        d_power = get_player_level(d_owned) + defender["reputation_fear"] + defender["reputation_respect"]
+            a_owned = await get_owned_businesses(db, req.telegram_id)
+            d_owned = await get_owned_businesses(db, req.target_id)
+            attacker, _ = await sync_earnings(db, attacker, a_owned)
+            defender, _ = await sync_earnings(db, defender, d_owned)
 
-        a_roll = a_power + random.randint(0, 20)
-        d_roll = d_power + random.randint(0, 20)
+            talents = await get_player_talents(db, req.telegram_id)
+            tb = get_talent_bonuses(talents)
+            a_power = get_player_level(a_owned) + attacker["reputation_fear"] + tb["street_fighter"]
+            d_power = get_player_level(d_owned) + defender["reputation_fear"] + defender["reputation_respect"]
 
-        win = a_roll > d_roll
-        if win:
-            steal = defender["cash"] * PVP_STEAL_PERCENT
-            steal = min(steal, 50000)
-            await db.execute("UPDATE players SET cash=cash+?, pvp_wins=pvp_wins+1 WHERE telegram_id=?", (steal, req.telegram_id))
-            await db.execute("UPDATE players SET cash=cash-? WHERE telegram_id=?", (steal, req.target_id))
-            winner_id = req.telegram_id
-        else:
-            steal = attacker["cash"] * (PVP_STEAL_PERCENT * 0.5)
-            steal = min(steal, 25000)
-            await db.execute("UPDATE players SET cash=cash-? WHERE telegram_id=?", (steal, req.telegram_id))
-            await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (steal, req.target_id))
-            winner_id = req.target_id
+            a_roll = a_power + random.randint(0, 20)
+            d_roll = d_power + random.randint(0, 20)
 
-        await db.execute(
-            "INSERT INTO pvp_log (attacker_id, defender_id, winner_id, cash_stolen) VALUES (?,?,?,?)",
-            (req.telegram_id, req.target_id, winner_id, steal),
-        )
-        await db.commit()
+            win = a_roll > d_roll
+            if win:
+                steal = defender["cash"] * PVP_STEAL_PERCENT
+                steal = min(steal, 50000)
+                await db.execute("UPDATE players SET cash=cash+?, pvp_wins=pvp_wins+1 WHERE telegram_id=?", (steal, req.telegram_id))
+                await db.execute("UPDATE players SET cash=MAX(0, cash-?) WHERE telegram_id=?", (steal, req.target_id))
+                winner_id = req.telegram_id
+            else:
+                steal = attacker["cash"] * (PVP_STEAL_PERCENT * 0.5)
+                steal = min(steal, 25000)
+                await db.execute("UPDATE players SET cash=MAX(0, cash-?) WHERE telegram_id=?", (steal, req.telegram_id))
+                await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (steal, req.target_id))
+                winner_id = req.target_id
 
-        await track_action(db, req.telegram_id, "pvp_attack")
-        if win:
-            await track_action(db, req.telegram_id, "pvp_win")
+            # Set PvP cooldown
+            await db.execute("UPDATE players SET pvp_cooldown_ts=? WHERE telegram_id=?", (now + PVP_COOLDOWN_SECONDS, req.telegram_id))
 
-        attacker = await get_player(db, req.telegram_id)
+            await db.execute(
+                "INSERT INTO pvp_log (attacker_id, defender_id, winner_id, cash_stolen) VALUES (?,?,?,?)",
+                (req.telegram_id, req.target_id, winner_id, steal),
+            )
+            await db.commit()
 
-        return {
-            "win": win,
-            "cash_stolen": round(steal, 2),
-            "your_power": a_power,
-            "their_power": d_power,
-            "player": attacker,
-        }
-    finally:
-        await db.close()
+            await track_action(db, req.telegram_id, "pvp_attack")
+            if win:
+                await track_action(db, req.telegram_id, "pvp_win")
+
+            attacker = await get_player(db, req.telegram_id)
+
+            return {
+                "win": win,
+                "cash_stolen": round(steal, 2),
+                "your_power": a_power,
+                "their_power": d_power,
+                "player": attacker,
+            }
+
+        finally:
+            await db.close()
 
 
 # ── Upgrades ──
 
 @app.post("/api/upgrade")
 async def buy_upgrade(req: UpgradeRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
 
-        cfg = UPGRADES.get(req.upgrade_id)
-        if not cfg: raise HTTPException(400, "Unknown upgrade")
+            cfg = UPGRADES.get(req.upgrade_id)
+            if not cfg: raise HTTPException(400, "Unknown upgrade")
 
-        upgrades = await get_upgrades(db, req.telegram_id)
-        existing = next((u for u in upgrades if u["upgrade_id"] == req.upgrade_id), None)
-        current_level = existing["level"] if existing else 0
-        cost = cfg["base_cost"] * (cfg["cost_multiplier"] ** current_level)
+            upgrades = await get_upgrades(db, req.telegram_id)
+            existing = next((u for u in upgrades if u["upgrade_id"] == req.upgrade_id), None)
+            current_level = existing["level"] if existing else 0
+            cost = cfg["base_cost"] * (cfg["cost_multiplier"] ** current_level)
 
-        if player["cash"] < cost: raise HTTPException(400, "Not enough cash")
+            if player["cash"] < cost: raise HTTPException(400, "Not enough cash")
 
-        new_cash = player["cash"] - cost
+            new_cash = player["cash"] - cost
 
-        if existing:
-            await db.execute("UPDATE player_upgrades SET level=? WHERE id=?", (current_level + 1, existing["id"]))
-        else:
-            await db.execute("INSERT INTO player_upgrades (telegram_id, upgrade_id, level) VALUES (?,?,1)", (req.telegram_id, req.upgrade_id))
+            if existing:
+                await db.execute("UPDATE player_upgrades SET level=? WHERE id=?", (current_level + 1, existing["id"]))
+            else:
+                await db.execute("INSERT INTO player_upgrades (telegram_id, upgrade_id, level) VALUES (?,?,1)", (req.telegram_id, req.upgrade_id))
 
-        effect = cfg["effect"]
-        if effect == "suspicion_reset":
-            await db.execute("UPDATE players SET cash=?, suspicion=0 WHERE telegram_id=?", (new_cash, req.telegram_id))
-        elif effect == "income_boost_10":
-            await db.execute("UPDATE players SET cash=?, reputation_respect=reputation_respect+5, reputation_fear=reputation_fear+5 WHERE telegram_id=?", (new_cash, req.telegram_id))
-        elif effect == "territory":
-            await db.execute("UPDATE players SET cash=?, reputation_respect=reputation_respect+3, reputation_fear=reputation_fear+3 WHERE telegram_id=?", (new_cash, req.telegram_id))
-        elif effect == "pvp_defense":
-            await db.execute("UPDATE players SET cash=?, reputation_respect=reputation_respect+5 WHERE telegram_id=?", (new_cash, req.telegram_id))
-        else:
-            await db.execute("UPDATE players SET cash=? WHERE telegram_id=?", (new_cash, req.telegram_id))
+            effect = cfg["effect"]
+            if effect == "suspicion_reset":
+                await db.execute("UPDATE players SET cash=?, suspicion=0 WHERE telegram_id=?", (new_cash, req.telegram_id))
+            elif effect == "income_boost_10":
+                await db.execute("UPDATE players SET cash=?, reputation_respect=reputation_respect+5, reputation_fear=reputation_fear+5 WHERE telegram_id=?", (new_cash, req.telegram_id))
+            elif effect == "territory":
+                await db.execute("UPDATE players SET cash=?, reputation_respect=reputation_respect+3, reputation_fear=reputation_fear+3 WHERE telegram_id=?", (new_cash, req.telegram_id))
+            elif effect == "pvp_defense":
+                await db.execute("UPDATE players SET cash=?, reputation_respect=reputation_respect+5 WHERE telegram_id=?", (new_cash, req.telegram_id))
+            else:
+                await db.execute("UPDATE players SET cash=? WHERE telegram_id=?", (new_cash, req.telegram_id))
 
-        await db.commit()
-        player = await get_player(db, req.telegram_id)
-        upgrades = await get_upgrades(db, req.telegram_id)
-        return {"player": player, "upgrades": upgrades}
-    finally:
-        await db.close()
+            await db.commit()
+            player = await get_player(db, req.telegram_id)
+            upgrades = await get_upgrades(db, req.telegram_id)
+            return {"player": player, "upgrades": upgrades}
+
+        finally:
+            await db.close()
 
 
 @app.get("/api/pvp/targets/{telegram_id}")
@@ -2123,97 +2204,121 @@ async def claim_login(req: LoginClaimRequest):
 
 @app.post("/api/prestige")
 async def do_prestige(req: PrestigeRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
 
-        current_prestige = player.get("prestige_level", 0)
-        required_level = PRESTIGE_CONFIG["base_level_required"] + current_prestige * PRESTIGE_CONFIG["level_increment"]
-        player_level = get_player_level(owned)
+            current_prestige = player.get("prestige_level", 0)
+            required_level = PRESTIGE_CONFIG["base_level_required"] + current_prestige * PRESTIGE_CONFIG["level_increment"]
+            player_level = get_player_level(owned)
 
-        if player_level < required_level:
-            raise HTTPException(400, f"Need level {required_level}")
+            if player_level < required_level:
+                raise HTTPException(400, f"Need level {required_level}")
 
-        new_prestige = current_prestige + 1
-        new_multiplier = 1.0 + new_prestige * PRESTIGE_CONFIG["multiplier_bonus"]
+            new_prestige = current_prestige + 1
+            new_multiplier = 1.0 + new_prestige * PRESTIGE_CONFIG["multiplier_bonus"]
 
-        # Talent bonuses applied to starting values
-        talents = await get_player_talents(db, req.telegram_id)
-        tb = get_talent_bonuses(talents)
-        start_cash = 1000 + tb["quick_start"]
-        start_fear = tb["intimidation"]
+            # Talent bonuses applied to starting values
+            talents = await get_player_talents(db, req.telegram_id)
+            tb = get_talent_bonuses(talents)
+            start_cash = 1000 + tb["quick_start"]
+            start_fear = tb["intimidation"]
 
-        # Reset businesses, cash, reputation — keep items, gang, prestige, talents
-        await db.execute("DELETE FROM player_businesses WHERE telegram_id=?", (req.telegram_id,))
-        await db.execute("DELETE FROM player_upgrades WHERE telegram_id=?", (req.telegram_id,))
-        await db.execute(
-            "UPDATE players SET cash=?, suspicion=0, reputation_fear=?, reputation_respect=0, "
-            "total_earned=0, total_robberies=0, robbery_cooldown_ts=0, "
-            "prestige_level=?, prestige_multiplier=?, talent_points=talent_points+1 WHERE telegram_id=?",
-            (start_cash, start_fear, new_prestige, new_multiplier, req.telegram_id),
-        )
-        await db.commit()
+            # Anti-abuse: cancel market listings (return items to inventory)
+            cursor = await db.execute("SELECT item_id FROM market_listings WHERE seller_id=?", (req.telegram_id,))
+            for row in await cursor.fetchall():
+                await db.execute(
+                    "INSERT OR IGNORE INTO player_inventory (telegram_id, item_id) VALUES (?,?)",
+                    (req.telegram_id, row["item_id"]),
+                )
+            await db.execute("DELETE FROM market_listings WHERE seller_id=?", (req.telegram_id,))
 
-        player = await get_player(db, req.telegram_id)
-        owned = await get_owned_businesses(db, req.telegram_id)
-        return {
-            "player": player,
-            "businesses": owned,
-            "prestige_level": new_prestige,
-            "prestige_multiplier": new_multiplier,
-            "income_per_sec": 0,
-            "suspicion_per_sec": 0,
-            "player_level": 0,
-            "talent_points": player.get("talent_points", 0),
-        }
-    finally:
-        await db.close()
+            # Anti-abuse: delete unopened cases
+            await db.execute("DELETE FROM player_cases WHERE telegram_id=?", (req.telegram_id,))
+
+            # Anti-abuse: prevent gang bank cash stashing
+            if player.get("gang_id"):
+                cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
+                member = await cursor.fetchone()
+                if member and member["role"] == "leader":
+                    # Leader: zero the gang bank (they can withdraw)
+                    await db.execute("UPDATE gangs SET cash_bank=0 WHERE id=?", (player["gang_id"],))
+
+            # Reset businesses, cash, reputation — keep items, gang, prestige, talents
+            await db.execute("DELETE FROM player_businesses WHERE telegram_id=?", (req.telegram_id,))
+            await db.execute("DELETE FROM player_upgrades WHERE telegram_id=?", (req.telegram_id,))
+            await db.execute(
+                "UPDATE players SET cash=?, suspicion=0, reputation_fear=?, reputation_respect=0, "
+                "total_earned=0, total_robberies=0, robbery_cooldown_ts=0, pvp_cooldown_ts=0, "
+                "prestige_level=?, prestige_multiplier=?, talent_points=talent_points+1 WHERE telegram_id=?",
+                (start_cash, start_fear, new_prestige, new_multiplier, req.telegram_id),
+            )
+            await db.commit()
+
+            player = await get_player(db, req.telegram_id)
+            owned = await get_owned_businesses(db, req.telegram_id)
+            return {
+                "player": player,
+                "businesses": owned,
+                "prestige_level": new_prestige,
+                "prestige_multiplier": new_multiplier,
+                "income_per_sec": 0,
+                "suspicion_per_sec": 0,
+                "player_level": 0,
+                "talent_points": player.get("talent_points", 0),
+            }
+
+        finally:
+            await db.close()
 
 
 # ── Talent Tree ──
 
 @app.post("/api/talent/assign")
 async def assign_talent(req: TalentAssignRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
 
-        talent_cfg = ALL_TALENTS.get(req.talent_id)
-        if not talent_cfg: raise HTTPException(400, "Unknown talent")
+            talent_cfg = ALL_TALENTS.get(req.talent_id)
+            if not talent_cfg: raise HTTPException(400, "Unknown talent")
 
-        if player.get("talent_points", 0) <= 0:
-            raise HTTPException(400, "No talent points")
+            if player.get("talent_points", 0) <= 0:
+                raise HTTPException(400, "No talent points")
 
-        talents = await get_player_talents(db, req.telegram_id)
-        current_level = talents.get(req.talent_id, 0)
-        if current_level >= talent_cfg["max_level"]:
-            raise HTTPException(400, "Max level reached")
+            talents = await get_player_talents(db, req.telegram_id)
+            current_level = talents.get(req.talent_id, 0)
+            if current_level >= talent_cfg["max_level"]:
+                raise HTTPException(400, "Max level reached")
 
-        # Insert or update talent level
-        await db.execute(
-            "INSERT INTO player_talents (telegram_id, talent_id, level) VALUES (?,?,1) "
-            "ON CONFLICT(telegram_id, talent_id) DO UPDATE SET level=level+1",
-            (req.telegram_id, req.talent_id),
-        )
-        await db.execute(
-            "UPDATE players SET talent_points=talent_points-1 WHERE telegram_id=?",
-            (req.telegram_id,),
-        )
-        await db.commit()
+            # Insert or update talent level
+            await db.execute(
+                "INSERT INTO player_talents (telegram_id, talent_id, level) VALUES (?,?,1) "
+                "ON CONFLICT(telegram_id, talent_id) DO UPDATE SET level=level+1",
+                (req.telegram_id, req.talent_id),
+            )
+            await db.execute(
+                "UPDATE players SET talent_points=talent_points-1 WHERE telegram_id=?",
+                (req.telegram_id,),
+            )
+            await db.commit()
 
-        player = await get_player(db, req.telegram_id)
-        talents = await get_player_talents(db, req.telegram_id)
-        return {
-            "player": player,
-            "player_talents": talents,
-            "talent_points": player.get("talent_points", 0),
-        }
-    finally:
-        await db.close()
+            player = await get_player(db, req.telegram_id)
+            talents = await get_player_talents(db, req.telegram_id)
+            return {
+                "player": player,
+                "player_talents": talents,
+                "talent_points": player.get("talent_points", 0),
+            }
+
+        finally:
+            await db.close()
 
 
 # ── Territories ──
@@ -2233,100 +2338,102 @@ async def get_territories():
 
 @app.post("/api/territory/attack")
 async def territory_attack(req: TerritoryAttackRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        if not player["gang_id"]: raise HTTPException(400, "Not in a gang")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            if not player["gang_id"]: raise HTTPException(400, "Not in a gang")
 
-        # Check role
-        cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
-        member = await cursor.fetchone()
-        if not member or member["role"] not in ("leader", "officer"):
-            raise HTTPException(400, "Only leader/officer can attack")
+            # Check role
+            cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
+            member = await cursor.fetchone()
+            if not member or member["role"] not in ("leader", "officer"):
+                raise HTTPException(400, "Only leader/officer can attack")
 
-        # Check cooldown
-        cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (player["gang_id"],))
-        gang = await cursor.fetchone()
-        if not gang: raise HTTPException(400, "Gang not found")
-        gang = dict(gang)
+            # Check cooldown
+            cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (player["gang_id"],))
+            gang = await cursor.fetchone()
+            if not gang: raise HTTPException(400, "Gang not found")
+            gang = dict(gang)
 
-        now = time.time()
-        if gang.get("last_territory_attack_ts", 0) + TERRITORY_ATTACK_COOLDOWN > now:
-            remaining = int(gang["last_territory_attack_ts"] + TERRITORY_ATTACK_COOLDOWN - now)
-            raise HTTPException(400, f"Cooldown: {remaining}s")
+            now = time.time()
+            if gang.get("last_territory_attack_ts", 0) + TERRITORY_ATTACK_COOLDOWN > now:
+                remaining = int(gang["last_territory_attack_ts"] + TERRITORY_ATTACK_COOLDOWN - now)
+                raise HTTPException(400, f"Cooldown: {remaining}s")
 
-        # Get territory
-        cursor = await db.execute("SELECT * FROM territories WHERE id=?", (req.territory_id,))
-        territory = await cursor.fetchone()
-        if not territory: raise HTTPException(400, "Territory not found")
-        territory = dict(territory)
+            # Get territory
+            cursor = await db.execute("SELECT * FROM territories WHERE id=?", (req.territory_id,))
+            territory = await cursor.fetchone()
+            if not territory: raise HTTPException(400, "Territory not found")
+            territory = dict(territory)
 
-        if territory["owner_gang_id"] == player["gang_id"]:
-            raise HTTPException(400, "Already own this territory")
+            if territory["owner_gang_id"] == player["gang_id"]:
+                raise HTTPException(400, "Already own this territory")
 
-        # Calculate attacker strength (includes gang armory bonus)
-        atk_gang_ups = await get_gang_upgrades(db, player["gang_id"])
-        atk_armory_bonus = get_gang_attack_bonus(atk_gang_ups)
-        cursor = await db.execute(
-            "SELECT SUM(pb.level) as total_level FROM gang_members gm JOIN player_businesses pb ON pb.telegram_id=gm.telegram_id WHERE gm.gang_id=?",
-            (player["gang_id"],),
-        )
-        atk_row = await cursor.fetchone()
-        atk_level = (atk_row["total_level"] or 0) if atk_row else 0
-        atk_power = atk_level + gang["power"] + atk_armory_bonus + random.randint(0, 30)
-
-        # Defender strength (includes their armory bonus)
-        def_power = 0
-        defender_gang_id = territory["owner_gang_id"]
-        if defender_gang_id:
-            def_gang_ups = await get_gang_upgrades(db, defender_gang_id)
-            def_armory_bonus = get_gang_attack_bonus(def_gang_ups)
+            # Calculate attacker strength (includes gang armory bonus)
+            atk_gang_ups = await get_gang_upgrades(db, player["gang_id"])
+            atk_armory_bonus = get_gang_attack_bonus(atk_gang_ups)
             cursor = await db.execute(
                 "SELECT SUM(pb.level) as total_level FROM gang_members gm JOIN player_businesses pb ON pb.telegram_id=gm.telegram_id WHERE gm.gang_id=?",
-                (defender_gang_id,),
+                (player["gang_id"],),
             )
-            def_row = await cursor.fetchone()
-            def_level = (def_row["total_level"] or 0) if def_row else 0
-            cursor = await db.execute("SELECT power FROM gangs WHERE id=?", (defender_gang_id,))
-            def_gang = await cursor.fetchone()
-            def_gang_power = def_gang["power"] if def_gang else 0
-            def_power = def_level + def_gang_power + def_armory_bonus + 10 + random.randint(0, 30)  # +10 defender bonus
+            atk_row = await cursor.fetchone()
+            atk_level = (atk_row["total_level"] or 0) if atk_row else 0
+            atk_power = atk_level + gang["power"] + atk_armory_bonus + random.randint(0, 30)
 
-        win = atk_power > def_power
+            # Defender strength (includes their armory bonus)
+            def_power = 0
+            defender_gang_id = territory["owner_gang_id"]
+            if defender_gang_id:
+                def_gang_ups = await get_gang_upgrades(db, defender_gang_id)
+                def_armory_bonus = get_gang_attack_bonus(def_gang_ups)
+                cursor = await db.execute(
+                    "SELECT SUM(pb.level) as total_level FROM gang_members gm JOIN player_businesses pb ON pb.telegram_id=gm.telegram_id WHERE gm.gang_id=?",
+                    (defender_gang_id,),
+                )
+                def_row = await cursor.fetchone()
+                def_level = (def_row["total_level"] or 0) if def_row else 0
+                cursor = await db.execute("SELECT power FROM gangs WHERE id=?", (defender_gang_id,))
+                def_gang = await cursor.fetchone()
+                def_gang_power = def_gang["power"] if def_gang else 0
+                def_power = def_level + def_gang_power + def_armory_bonus + 10 + random.randint(0, 30)  # +10 defender bonus
 
-        # Update cooldown
-        await db.execute("UPDATE gangs SET last_territory_attack_ts=? WHERE id=?", (now, player["gang_id"]))
+            win = atk_power > def_power
 
-        if win:
+            # Update cooldown
+            await db.execute("UPDATE gangs SET last_territory_attack_ts=? WHERE id=?", (now, player["gang_id"]))
+
+            if win:
+                await db.execute(
+                    "UPDATE territories SET owner_gang_id=?, captured_at=? WHERE id=?",
+                    (player["gang_id"], now, req.territory_id),
+                )
+                await track_action(db, req.telegram_id, "territory_capture")
+
+            # Log
             await db.execute(
-                "UPDATE territories SET owner_gang_id=?, captured_at=? WHERE id=?",
-                (player["gang_id"], now, req.territory_id),
+                "INSERT INTO territory_wars_log (territory_id, attacker_gang_id, defender_gang_id, winner_gang_id, attacker_power, defender_power) VALUES (?,?,?,?,?,?)",
+                (req.territory_id, player["gang_id"], defender_gang_id, player["gang_id"] if win else defender_gang_id, atk_power, def_power),
             )
-            await track_action(db, req.telegram_id, "territory_capture")
+            await db.commit()
 
-        # Log
-        await db.execute(
-            "INSERT INTO territory_wars_log (territory_id, attacker_gang_id, defender_gang_id, winner_gang_id, attacker_power, defender_power) VALUES (?,?,?,?,?,?)",
-            (req.territory_id, player["gang_id"], defender_gang_id, player["gang_id"] if win else defender_gang_id, atk_power, def_power),
-        )
-        await db.commit()
+            # Fetch updated territories
+            cursor = await db.execute(
+                "SELECT t.*, g.name as gang_name, g.tag as gang_tag FROM territories t LEFT JOIN gangs g ON g.id=t.owner_gang_id"
+            )
+            territories = [dict(r) for r in await cursor.fetchall()]
 
-        # Fetch updated territories
-        cursor = await db.execute(
-            "SELECT t.*, g.name as gang_name, g.tag as gang_tag FROM territories t LEFT JOIN gangs g ON g.id=t.owner_gang_id"
-        )
-        territories = [dict(r) for r in await cursor.fetchall()]
+            return {
+                "win": win,
+                "territory_name": territory["name"],
+                "attacker_power": atk_power,
+                "defender_power": def_power,
+                "territories": territories,
+            }
 
-        return {
-            "win": win,
-            "territory_name": territory["name"],
-            "attacker_power": atk_power,
-            "defender_power": def_power,
-            "territories": territories,
-        }
-    finally:
-        await db.close()
+        finally:
+            await db.close()
 
 
 # ── Achievements ──
@@ -2373,56 +2480,58 @@ async def claim_achievement(req: AchievementClaimRequest):
 
 @app.post("/api/ad/reward")
 async def ad_reward(req: AdRewardRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
 
-        # VIP players don't need ads
-        if is_vip_active(player):
-            raise HTTPException(400, "VIP players don't need ads")
+            # VIP players don't need ads
+            if is_vip_active(player):
+                raise HTTPException(400, "VIP players don't need ads")
 
-        now = time.time()
-        last_ad = player.get("last_ad_ts", 0)
-        if now - last_ad < AD_COOLDOWN:
-            remaining = int(AD_COOLDOWN - (now - last_ad))
-            raise HTTPException(400, f"Ad cooldown: {remaining}s")
+            now = time.time()
+            last_ad = player.get("last_ad_ts", 0)
+            if now - last_ad < AD_COOLDOWN:
+                remaining = int(AD_COOLDOWN - (now - last_ad))
+                raise HTTPException(400, f"Ad cooldown: {remaining}s")
 
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player, _ = await sync_earnings(db, player, owned)
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
 
-        result = {}
+            result = {}
 
-        if req.reward_type == "income_boost":
-            boost_until = now + 300  # 5 minutes
-            await db.execute(
-                "UPDATE players SET last_ad_ts=?, ad_boost_until=? WHERE telegram_id=?",
-                (now, boost_until, req.telegram_id),
-            )
-            result = {"type": "income_boost", "duration": 300, "message": "x2 доход на 5 минут!"}
+            if req.reward_type == "income_boost":
+                boost_until = now + 300  # 5 minutes
+                await db.execute(
+                    "UPDATE players SET last_ad_ts=?, ad_boost_until=? WHERE telegram_id=?",
+                    (now, boost_until, req.telegram_id),
+                )
+                result = {"type": "income_boost", "duration": 300, "message": "x2 доход на 5 минут!"}
 
-        elif req.reward_type == "free_bet":
-            await db.execute(
-                "UPDATE players SET last_ad_ts=?, cash=cash+1000 WHERE telegram_id=?",
-                (now, req.telegram_id),
-            )
-            result = {"type": "free_bet", "cash": 1000, "message": "+$1,000 для ставки!"}
+            elif req.reward_type == "free_bet":
+                await db.execute(
+                    "UPDATE players SET last_ad_ts=?, cash=cash+1000 WHERE telegram_id=?",
+                    (now, req.telegram_id),
+                )
+                result = {"type": "free_bet", "cash": 1000, "message": "+$1,000 для ставки!"}
 
-        elif req.reward_type == "reset_cooldown":
-            await db.execute(
-                "UPDATE players SET last_ad_ts=?, robbery_cooldown_ts=0 WHERE telegram_id=?",
-                (now, req.telegram_id),
-            )
-            result = {"type": "reset_cooldown", "message": "Кулдаун ограбления сброшен!"}
+            elif req.reward_type == "reset_cooldown":
+                await db.execute(
+                    "UPDATE players SET last_ad_ts=?, robbery_cooldown_ts=0 WHERE telegram_id=?",
+                    (now, req.telegram_id),
+                )
+                result = {"type": "reset_cooldown", "message": "Кулдаун ограбления сброшен!"}
 
-        else:
-            raise HTTPException(400, "Unknown reward type")
+            else:
+                raise HTTPException(400, "Unknown reward type")
 
-        await db.commit()
-        player = await get_player(db, req.telegram_id)
-        return {"player": player, "reward": result}
-    finally:
-        await db.close()
+            await db.commit()
+            player = await get_player(db, req.telegram_id)
+            return {"player": player, "reward": result}
+
+        finally:
+            await db.close()
 
 
 # ── Stars Invoice ──
@@ -2824,59 +2933,61 @@ async def claim_event_milestone(req: EventClaimRequest):
 
 @app.post("/api/boss/attack")
 async def boss_attack(req: BossAttackRequest):
-    db = await get_db()
-    try:
-        player = await get_player(db, req.telegram_id)
-        if not player: raise HTTPException(404, "Player not found")
-        if not player.get("gang_id") or player["gang_id"] != req.gang_id:
-            raise HTTPException(400, "Not in this gang")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+            if not player.get("gang_id") or player["gang_id"] != req.gang_id:
+                raise HTTPException(400, "Not in this gang")
 
-        # Cooldown check
-        now = time.time()
-        last_attack = player.get("last_boss_attack_ts", 0)
-        if now - last_attack < BOSS_ATTACK_COOLDOWN:
-            remaining = int(BOSS_ATTACK_COOLDOWN - (now - last_attack))
-            raise HTTPException(400, f"Cooldown: {remaining}s")
+            # Cooldown check
+            now = time.time()
+            last_attack = player.get("last_boss_attack_ts", 0)
+            if now - last_attack < BOSS_ATTACK_COOLDOWN:
+                remaining = int(BOSS_ATTACK_COOLDOWN - (now - last_attack))
+                raise HTTPException(400, f"Cooldown: {remaining}s")
 
-        # Get boss
-        cursor = await db.execute("SELECT * FROM active_bosses WHERE gang_id=? AND defeated=0", (req.gang_id,))
-        boss_row = await cursor.fetchone()
-        if not boss_row:
-            raise HTTPException(400, "No active boss")
-        boss_row = dict(boss_row)
+            # Get boss
+            cursor = await db.execute("SELECT * FROM active_bosses WHERE gang_id=? AND defeated=0", (req.gang_id,))
+            boss_row = await cursor.fetchone()
+            if not boss_row:
+                raise HTTPException(400, "No active boss")
+            boss_row = dict(boss_row)
 
-        # Calculate damage
-        owned = await get_owned_businesses(db, req.telegram_id)
-        player_level = get_player_level(owned)
-        equip_bonus = await get_equip_income_bonus(db, req.telegram_id)
-        armory_bonus = 0
-        if player.get("gang_id"):
-            gang_ups = await get_gang_upgrades(db, player["gang_id"])
-            armory_bonus = get_gang_attack_bonus(gang_ups)
-        damage = calc_attack_damage(player_level, player["reputation_fear"], equip_bonus, armory_bonus)
+            # Calculate damage
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player_level = get_player_level(owned)
+            equip_bonus = await get_equip_income_bonus(db, req.telegram_id)
+            armory_bonus = 0
+            if player.get("gang_id"):
+                gang_ups = await get_gang_upgrades(db, player["gang_id"])
+                armory_bonus = get_gang_attack_bonus(gang_ups)
+            damage = calc_attack_damage(player_level, player["reputation_fear"], equip_bonus, armory_bonus)
 
-        new_hp = max(0, boss_row["current_health"] - damage)
-        defeated = 1 if new_hp <= 0 else 0
+            new_hp = max(0, boss_row["current_health"] - damage)
+            defeated = 1 if new_hp <= 0 else 0
 
-        await db.execute("UPDATE active_bosses SET current_health=?, defeated=? WHERE gang_id=? AND defeated=0",
-                         (new_hp, defeated, req.gang_id))
-        await db.execute("INSERT INTO boss_attack_log (gang_id, telegram_id, damage) VALUES (?,?,?)",
-                         (req.gang_id, req.telegram_id, damage))
-        await db.execute("UPDATE players SET last_boss_attack_ts=? WHERE telegram_id=?", (now, req.telegram_id))
-        await db.commit()
+            await db.execute("UPDATE active_bosses SET current_health=?, defeated=? WHERE gang_id=? AND defeated=0",
+                             (new_hp, defeated, req.gang_id))
+            await db.execute("INSERT INTO boss_attack_log (gang_id, telegram_id, damage) VALUES (?,?,?)",
+                             (req.gang_id, req.telegram_id, damage))
+            await db.execute("UPDATE players SET last_boss_attack_ts=? WHERE telegram_id=?", (now, req.telegram_id))
+            await db.commit()
 
-        rewards = None
-        if defeated:
-            await distribute_boss_rewards(db, req.gang_id, boss_row["boss_id"])
-            # Spawn next boss
-            await spawn_boss_for_gang(db, req.gang_id)
-            rewards = {"boss_defeated": True, "boss_name": boss_row["boss_id"]}
+            rewards = None
+            if defeated:
+                await distribute_boss_rewards(db, req.gang_id, boss_row["boss_id"])
+                # Spawn next boss
+                await spawn_boss_for_gang(db, req.gang_id)
+                rewards = {"boss_defeated": True, "boss_name": boss_row["boss_id"]}
 
-        boss_data = await get_boss_data(db, req.gang_id)
-        player = await get_player(db, req.telegram_id)
-        return {"damage": damage, "boss_data": boss_data, "player": player, "rewards": rewards}
-    finally:
-        await db.close()
+            boss_data = await get_boss_data(db, req.gang_id)
+            player = await get_player(db, req.telegram_id)
+            return {"damage": damage, "boss_data": boss_data, "player": player, "rewards": rewards}
+
+        finally:
+            await db.close()
 
 
 @app.get("/api/boss/{gang_id}")

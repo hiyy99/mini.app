@@ -15,8 +15,8 @@ from telegram.request import HTTPXRequest
 from backend.game_config import VIP_PACKAGES, CASH_PACKAGES, CASE_PACKAGES
 
 # ── Config ──
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8553722467:AAFWR7NJUVtDveeSezAoOuuLoM8GssB3l8w")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://tested-apollo-reprint-director.trycloudflare.com/static/index.html")
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+WEBAPP_URL = os.environ["WEBAPP_URL"]
 DB_PATH = os.path.join(os.path.dirname(__file__), "game.db")
 
 logging.basicConfig(level=logging.INFO)
@@ -162,23 +162,28 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 def main():
-    proxy_url = "socks5://HlMRqirXwH:36zs4QjEJm@193.238.152.5:32861"
-    request = HTTPXRequest(
-        proxy=proxy_url,
-        connect_timeout=15.0,
-        read_timeout=30.0,
-        write_timeout=30.0,
-        pool_timeout=15.0,
-    )
-    app = Application.builder().token(BOT_TOKEN).request(request).get_updates_request(
-        HTTPXRequest(
+    proxy_url = os.getenv("PROXY_URL")  # e.g. socks5://user:pass@host:port
+    builder = Application.builder().token(BOT_TOKEN)
+
+    if proxy_url:
+        request = HTTPXRequest(
             proxy=proxy_url,
             connect_timeout=15.0,
             read_timeout=30.0,
             write_timeout=30.0,
             pool_timeout=15.0,
         )
-    ).build()
+        builder = builder.request(request).get_updates_request(
+            HTTPXRequest(
+                proxy=proxy_url,
+                connect_timeout=15.0,
+                read_timeout=30.0,
+                write_timeout=30.0,
+                pool_timeout=15.0,
+            )
+        )
+
+    app = builder.build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))

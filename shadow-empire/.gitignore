@@ -1,0 +1,7 @@
+game.db
+*.log
+__pycache__/
+.env
+venv/
+cf_log*.txt
+server.log

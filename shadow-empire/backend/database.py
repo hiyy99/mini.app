@@ -332,12 +332,19 @@ async def init_db():
         ("players", "tournament_top3", "ALTER TABLE players ADD COLUMN tournament_top3 INTEGER DEFAULT 0"),
         ("players", "bosses_killed", "ALTER TABLE players ADD COLUMN bosses_killed INTEGER DEFAULT 0"),
         ("players", "talent_points", "ALTER TABLE players ADD COLUMN talent_points INTEGER DEFAULT 0"),
+        ("players", "pvp_cooldown_ts", "ALTER TABLE players ADD COLUMN pvp_cooldown_ts REAL DEFAULT 0"),
     ]
     for table, column, sql in migrations:
         try:
             await db.execute(sql)
         except Exception:
             pass  # column already exists
+
+    # ── Unique index for tournament prizes dedup ──
+    try:
+        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tournament_prizes_dedup ON tournament_prizes_log (telegram_id, day)")
+    except Exception:
+        pass
 
     # ── Backfill talent_points for existing prestige players ──
     try:
