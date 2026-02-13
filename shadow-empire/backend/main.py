@@ -1547,104 +1547,12 @@ async def spin_case(req: CaseSpinRequest):
 
 @app.post("/api/market/sell")
 async def market_sell(req: MarketListRequest):
-    async with get_player_lock(req.telegram_id):
-        db = await get_db()
-        try:
-            player = await get_player(db, req.telegram_id)
-            if not player: raise HTTPException(404, "Player not found")
-            validate_amount(req.price, "price")
-            if req.price < 100: raise HTTPException(400, "Min price is $100")
-            if req.price > 10_000_000: raise HTTPException(400, "Max price is $10,000,000")
-
-            # Check owns item and not equipped
-            cursor = await db.execute(
-                "SELECT * FROM player_inventory WHERE telegram_id=? AND item_id=?",
-                (req.telegram_id, req.item_id)
-            )
-            inv = await cursor.fetchone()
-            if not inv: raise HTTPException(400, "Item not owned")
-            if inv["equipped"]: raise HTTPException(400, "Unequip first")
-
-            # Check not already listed
-            cursor = await db.execute(
-                "SELECT id FROM market_listings WHERE seller_id=? AND item_id=?",
-                (req.telegram_id, req.item_id)
-            )
-            if await cursor.fetchone(): raise HTTPException(400, "Already listed")
-
-            # Remove from inventory, add to market
-            await db.execute("DELETE FROM player_inventory WHERE telegram_id=? AND item_id=?", (req.telegram_id, req.item_id))
-            await db.execute(
-                "INSERT INTO market_listings (seller_id, item_id, price) VALUES (?, ?, ?)",
-                (req.telegram_id, req.item_id, req.price)
-            )
-
-            # Update character if was equipped in slot
-            item_cfg = SHOP_ITEMS.get(req.item_id)
-            if item_cfg:
-                slot = item_cfg["slot"]
-                if slot in ("hat", "jacket", "accessory", "weapon", "car"):
-                    await db.execute(f"UPDATE player_character SET {slot}='none' WHERE telegram_id=? AND {slot}=?", (req.telegram_id, req.item_id))
-
-            await db.execute("UPDATE players SET market_sales=market_sales+1 WHERE telegram_id=?", (req.telegram_id,))
-            await db.commit()
-
-            inventory = await get_inventory(db, req.telegram_id)
-            cursor = await db.execute("SELECT * FROM market_listings WHERE seller_id=?", (req.telegram_id,))
-            my_listings = [dict(r) for r in await cursor.fetchall()]
-
-            return {"inventory": inventory, "my_listings": my_listings}
-
-        finally:
-            await db.close()
+    raise HTTPException(400, "Продажа предметов временно отключена")
 
 
 @app.post("/api/market/buy")
 async def market_buy(req: MarketBuyRequest):
-    async with get_player_lock(req.telegram_id):
-        db = await get_db()
-        try:
-            player = await get_player(db, req.telegram_id)
-            if not player: raise HTTPException(404, "Player not found")
-            owned_biz = await get_owned_businesses(db, req.telegram_id)
-            player, _ = await sync_earnings(db, player, owned_biz)
-
-            cursor = await db.execute("SELECT * FROM market_listings WHERE id=?", (req.listing_id,))
-            listing = await cursor.fetchone()
-            if not listing: raise HTTPException(400, "Listing not found")
-            listing = dict(listing)
-
-            if listing["seller_id"] == req.telegram_id: raise HTTPException(400, "Can't buy own listing")
-            if player["cash"] < listing["price"]: raise HTTPException(400, "Not enough cash")
-
-            # Check buyer doesn't already own this item
-            cursor = await db.execute(
-                "SELECT id FROM player_inventory WHERE telegram_id=? AND item_id=?",
-                (req.telegram_id, listing["item_id"])
-            )
-            if await cursor.fetchone(): raise HTTPException(400, "Already own this item")
-
-            # Atomically remove listing first to prevent double-buy
-            cursor = await db.execute("DELETE FROM market_listings WHERE id=?", (req.listing_id,))
-            if cursor.rowcount == 0:
-                raise HTTPException(400, "Listing already sold")
-
-            # Transfer — VIP gets reduced commission
-            seller = await get_player(db, listing["seller_id"])
-            commission = VIP_MARKET_COMMISSION if (seller and is_vip_active(seller)) else MARKET_COMMISSION
-            seller_gets = listing["price"] * (1 - commission)
-            await db.execute("UPDATE players SET cash = cash - ? WHERE telegram_id = ?", (listing["price"], req.telegram_id))
-            await db.execute("UPDATE players SET cash = cash + ? WHERE telegram_id = ?", (seller_gets, listing["seller_id"]))
-            await db.execute("INSERT INTO player_inventory (telegram_id, item_id) VALUES (?, ?)", (req.telegram_id, listing["item_id"]))
-            await db.commit()
-
-            player = await get_player(db, req.telegram_id)
-            inventory = await get_inventory(db, req.telegram_id)
-
-            return {"player": player, "inventory": inventory, "bought_item_id": listing["item_id"]}
-
-        finally:
-            await db.close()
+    raise HTTPException(400, "Маркет временно отключён")
 
 
 @app.post("/api/market/cancel")
@@ -2250,11 +2158,9 @@ async def do_prestige(req: PrestigeRequest):
                     # Leader: zero the gang bank (they can withdraw)
                     await db.execute("UPDATE gangs SET cash_bank=0 WHERE id=?", (player["gang_id"],))
 
-            # Reset businesses, cash, reputation, inventory — keep gang, prestige, talents
+            # Reset businesses, cash, reputation — keep items, gang, prestige, talents
             await db.execute("DELETE FROM player_businesses WHERE telegram_id=?", (req.telegram_id,))
             await db.execute("DELETE FROM player_upgrades WHERE telegram_id=?", (req.telegram_id,))
-            await db.execute("DELETE FROM player_inventory WHERE telegram_id=?", (req.telegram_id,))
-            await db.execute("UPDATE player_character SET hat='none', jacket='none', accessory='none', weapon='none', car='none' WHERE telegram_id=?", (req.telegram_id,))
             await db.execute(
                 "UPDATE players SET cash=?, suspicion=0, reputation_fear=?, reputation_respect=0, "
                 "total_earned=0, total_robberies=0, robbery_cooldown_ts=0, pvp_cooldown_ts=0, "
