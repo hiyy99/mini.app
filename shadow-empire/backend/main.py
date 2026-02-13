@@ -1127,7 +1127,7 @@ async def do_robbery(req: RobberyRequest):
             success, reward, suspicion_gain = attempt_robbery(req.robbery_id, player["reputation_fear"], reward_bonus_pct=tb["big_loot"])
             new_cash = player["cash"] + reward
             new_suspicion = min(player["suspicion"] + suspicion_gain, MAX_SUSPICION)
-            actual_cd = cfg["cooldown_seconds"] * (1 - tb["robbery_master"] / 100.0)
+            actual_cd = max(5, cfg["cooldown_seconds"] * (1 - tb["robbery_master"] / 100.0))
 
             await db.execute(
                 "UPDATE players SET cash=?, suspicion=?, robbery_cooldown_ts=?, reputation_fear=reputation_fear+2, total_robberies=total_robberies+1 WHERE telegram_id=?",
@@ -2043,6 +2043,7 @@ async def leaderboard():
 
 @app.post("/api/mission/claim")
 async def claim_mission(req: MissionClaimRequest):
+  async with get_player_lock(req.telegram_id):
     db = await get_db()
     try:
         cursor = await db.execute(
@@ -2070,6 +2071,7 @@ async def claim_mission(req: MissionClaimRequest):
 
 @app.post("/api/login/claim")
 async def claim_login(req: LoginClaimRequest):
+  async with get_player_lock(req.telegram_id):
     db = await get_db()
     try:
         login_data = await check_login_streak(db, req.telegram_id)
@@ -2361,6 +2363,7 @@ async def get_achievements(telegram_id: int):
 
 @app.post("/api/achievement/claim")
 async def claim_achievement(req: AchievementClaimRequest):
+  async with get_player_lock(req.telegram_id):
     db = await get_db()
     try:
         cursor = await db.execute(
@@ -2508,6 +2511,7 @@ async def get_vip_status(telegram_id: int):
 
 @app.post("/api/vip/daily-case")
 async def claim_vip_daily_case(req: VipDailyCaseRequest):
+  async with get_player_lock(req.telegram_id):
     db = await get_db()
     try:
         player = await get_player(db, req.telegram_id)
@@ -2540,6 +2544,7 @@ async def claim_vip_daily_case(req: VipDailyCaseRequest):
 
 @app.post("/api/vip/claim-item")
 async def claim_vip_item(req: VipItemClaimRequest):
+  async with get_player_lock(req.telegram_id):
     db = await get_db()
     try:
         player = await get_player(db, req.telegram_id)
@@ -2843,6 +2848,7 @@ async def get_quests(telegram_id: int):
 
 @app.post("/api/event/claim")
 async def claim_event_milestone(req: EventClaimRequest):
+  async with get_player_lock(req.telegram_id):
     db = await get_db()
     try:
         ev = get_active_event()
