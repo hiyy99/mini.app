@@ -2065,6 +2065,7 @@ async function watchAd(rewardType) {
     } catch(e) {
         // User closed ad or ad failed
         console.log('Ad not completed', e);
+        showPopup('📺', 'Реклама', '', 'Реклама сейчас недоступна, попробуй позже', '');
     }
 }
 
