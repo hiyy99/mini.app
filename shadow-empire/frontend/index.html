@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Shadow Empire</title>
-    <link rel="stylesheet" href="css/style.css?v=20">
+    <link rel="stylesheet" href="css/style.css?v=21">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
@@ -57,6 +57,13 @@
     </div>
 
     <div id="game" class="hidden">
+        <!-- Weekly Event Banner -->
+        <div id="weekly-event-banner" class="weekly-event-banner hidden">
+            <span id="weekly-event-emoji" class="weekly-event-emoji"></span>
+            <span id="weekly-event-name" class="weekly-event-name"></span>
+            <span id="weekly-event-desc" class="weekly-event-desc"></span>
+        </div>
+
         <!-- Event Banner -->
         <div id="event-banner" class="event-banner hidden">
             <div class="event-banner-left">
@@ -359,6 +366,8 @@
                     <button class="sub-tab active" onclick="switchGangSubTab('gang-main',this)">👥 Банда</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-territories',this)">🗺 Территории</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-pvp',this)">⚔️ PvP</button>
+                    <button class="sub-tab" onclick="switchGangSubTab('gang-heists',this)">🏴 Налёт</button>
+                    <button class="sub-tab" onclick="switchGangSubTab('gang-wars',this)">⚔️ Война</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-tournament',this)">🏆 Турнир</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-boss',this)">👹 Босс</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-leaderboard',this)">📊 Рейтинг</button>
@@ -384,6 +393,14 @@
                     <div id="tournament-leaderboard" class="tournament-leaderboard"></div>
                     <div id="tournament-prizes-info" class="tournament-prizes-info"></div>
                 </div>
+                <div id="gang-heists" class="hidden">
+                    <div class="tab-header"><h2>🏴 Совместные налёты</h2><p>Собери команду — ограби по-крупному</p></div>
+                    <div id="heists-section"></div>
+                </div>
+                <div id="gang-wars" class="hidden">
+                    <div class="tab-header"><h2>⚔️ Войны банд</h2><p>Объяви войну и набирай очки</p></div>
+                    <div id="wars-section"></div>
+                </div>
                 <div id="gang-boss" class="hidden">
                     <div class="tab-header"><h2>👹 Босс банды</h2><p>Атакуйте вместе — получайте добычу</p></div>
                     <div id="boss-section"></div>
@@ -406,6 +423,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=20"></script>
+    <script src="js/app.js?v=21"></script>
 </body>
 </html>

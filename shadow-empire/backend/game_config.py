@@ -482,7 +482,7 @@ MISSION_TEMPLATES = [
     {"id": "case_open_1", "name": "Открыть кейс", "emoji": "📦", "type": "case_open", "target": 1, "reward": 800},
 ]
 
-# ── Daily Login Rewards (7-day cycle) ──
+# ── Daily Login Rewards (30-day cycle) ──
 LOGIN_REWARDS = [
     {"day": 1, "type": "cash", "amount": 200, "label": "$200"},
     {"day": 2, "type": "cash", "amount": 500, "label": "$500"},
@@ -491,6 +491,29 @@ LOGIN_REWARDS = [
     {"day": 5, "type": "cash", "amount": 4000, "label": "$4,000"},
     {"day": 6, "type": "case", "case_id": "case_basic", "label": "📦 Базовый кейс"},
     {"day": 7, "type": "cash", "amount": 8000, "label": "$8,000"},
+    {"day": 8, "type": "cash", "amount": 3000, "label": "$3,000"},
+    {"day": 9, "type": "cash", "amount": 5000, "label": "$5,000"},
+    {"day": 10, "type": "cash", "amount": 7000, "label": "$7,000"},
+    {"day": 11, "type": "cash", "amount": 10000, "label": "$10,000"},
+    {"day": 12, "type": "case", "case_id": "case_basic", "label": "📦 Базовый кейс"},
+    {"day": 13, "type": "cash", "amount": 12000, "label": "$12,000"},
+    {"day": 14, "type": "case", "case_id": "case_premium", "label": "🎁 Премиум кейс"},
+    {"day": 15, "type": "cash", "amount": 15000, "label": "$15,000"},
+    {"day": 16, "type": "cash", "amount": 8000, "label": "$8,000"},
+    {"day": 17, "type": "cash", "amount": 12000, "label": "$12,000"},
+    {"day": 18, "type": "cash", "amount": 18000, "label": "$18,000"},
+    {"day": 19, "type": "case", "case_id": "case_basic", "label": "📦 Базовый кейс"},
+    {"day": 20, "type": "cash", "amount": 20000, "label": "$20,000"},
+    {"day": 21, "type": "case", "case_id": "case_legendary", "label": "💀 Легендарный кейс"},
+    {"day": 22, "type": "cash", "amount": 15000, "label": "$15,000"},
+    {"day": 23, "type": "cash", "amount": 20000, "label": "$20,000"},
+    {"day": 24, "type": "cash", "amount": 25000, "label": "$25,000"},
+    {"day": 25, "type": "case", "case_id": "case_premium", "label": "🎁 Премиум кейс"},
+    {"day": 26, "type": "cash", "amount": 30000, "label": "$30,000"},
+    {"day": 27, "type": "cash", "amount": 35000, "label": "$35,000"},
+    {"day": 28, "type": "case", "case_id": "case_weapon", "label": "⚔️ Оружейный кейс"},
+    {"day": 29, "type": "cash", "amount": 40000, "label": "$40,000"},
+    {"day": 30, "type": "cash_and_case", "amount": 100000, "case_id": "case_legendary", "label": "💀 $100K + Легендарный кейс"},
 ]
 
 # ── Prestige ──
@@ -573,48 +596,58 @@ TIER_INFO = {
 }
 
 ACHIEVEMENTS = [
-    # ── Robberies (4 tiers) ──
+    # ── Robberies (5 tiers) ──
     {"id": "rob_10", "name": "Карманник", "emoji": "👛", "description": "Совершить 10 ограблений", "category": "robbery", "tier": "bronze", "field": "total_robberies", "target": 10, "reward": 2000},
     {"id": "rob_50", "name": "Взломщик", "emoji": "🔓", "description": "Совершить 50 ограблений", "category": "robbery", "tier": "silver", "field": "total_robberies", "target": 50, "reward": 10000},
     {"id": "rob_200", "name": "Мастер-вор", "emoji": "🦹", "description": "Совершить 200 ограблений", "category": "robbery", "tier": "gold", "field": "total_robberies", "target": 200, "reward": 50000},
     {"id": "rob_500", "name": "Легенда криминала", "emoji": "💀", "description": "Совершить 500 ограблений", "category": "robbery", "tier": "gold", "field": "total_robberies", "target": 500, "reward": 150000},
-    # ── Earnings (4 tiers) ──
+    {"id": "rob_1000", "name": "Неуловимый", "emoji": "🥷", "description": "Совершить 1000 ограблений", "category": "robbery", "tier": "gold", "field": "total_robberies", "target": 1000, "reward": 300000},
+    # ── Earnings (5 tiers) ──
     {"id": "earn_10k", "name": "Первые деньги", "emoji": "💵", "description": "Заработать $10,000", "category": "earnings", "tier": "bronze", "field": "total_earned", "target": 10000, "reward": 1000},
     {"id": "earn_100k", "name": "На карман", "emoji": "💰", "description": "Заработать $100,000", "category": "earnings", "tier": "bronze", "field": "total_earned", "target": 100000, "reward": 5000},
     {"id": "earn_1m", "name": "Миллионер", "emoji": "🤑", "description": "Заработать $1,000,000", "category": "earnings", "tier": "silver", "field": "total_earned", "target": 1000000, "reward": 25000},
     {"id": "earn_10m", "name": "Магнат", "emoji": "👑", "description": "Заработать $10,000,000", "category": "earnings", "tier": "gold", "field": "total_earned", "target": 10000000, "reward": 100000},
+    {"id": "earn_50m", "name": "Олигарх", "emoji": "💎", "description": "Заработать $50,000,000", "category": "earnings", "tier": "gold", "field": "total_earned", "target": 50000000, "reward": 500000},
     # ── Level (4 tiers) ──
     {"id": "lvl_5", "name": "Новичок района", "emoji": "⭐", "description": "Достичь уровня 5", "category": "level", "tier": "bronze", "field": "level", "target": 5, "reward": 2000},
     {"id": "lvl_10", "name": "Авторитет", "emoji": "⭐", "description": "Достичь уровня 10", "category": "level", "tier": "bronze", "field": "level", "target": 10, "reward": 5000},
     {"id": "lvl_25", "name": "Босс района", "emoji": "🌟", "description": "Достичь уровня 25", "category": "level", "tier": "silver", "field": "level", "target": 25, "reward": 20000},
     {"id": "lvl_50", "name": "Крёстный отец", "emoji": "🌟", "description": "Достичь уровня 50", "category": "level", "tier": "gold", "field": "level", "target": 50, "reward": 100000},
-    # ── PvP (3 tiers) ──
+    # ── PvP (4 tiers) ──
     {"id": "pvp_5", "name": "Задира", "emoji": "👊", "description": "Победить 5 раз в PvP", "category": "pvp", "tier": "bronze", "field": "pvp_wins", "target": 5, "reward": 5000},
     {"id": "pvp_20", "name": "Боец", "emoji": "🥊", "description": "Победить 20 раз в PvP", "category": "pvp", "tier": "silver", "field": "pvp_wins", "target": 20, "reward": 25000},
     {"id": "pvp_50", "name": "Гладиатор", "emoji": "🗡", "description": "Победить 50 раз в PvP", "category": "pvp", "tier": "gold", "field": "pvp_wins", "target": 50, "reward": 75000},
-    # ── Collection (3 tiers) ──
+    {"id": "pvp_100", "name": "Разрушитель", "emoji": "💥", "description": "Победить 100 раз в PvP", "category": "pvp", "tier": "gold", "field": "pvp_wins", "target": 100, "reward": 200000},
+    # ── Collection (5 tiers) ──
     {"id": "items_5", "name": "Коллекционер", "emoji": "🎒", "description": "Собрать 5 предметов", "category": "collection", "tier": "bronze", "field": "inventory_count", "target": 5, "reward": 3000},
     {"id": "items_15", "name": "Барахольщик", "emoji": "🧳", "description": "Собрать 15 предметов", "category": "collection", "tier": "silver", "field": "inventory_count", "target": 15, "reward": 15000},
     {"id": "items_30", "name": "Хранитель", "emoji": "🏛", "description": "Собрать 30 предметов", "category": "collection", "tier": "gold", "field": "inventory_count", "target": 30, "reward": 50000},
+    {"id": "items_50", "name": "Архивариус", "emoji": "📚", "description": "Собрать 50 предметов", "category": "collection", "tier": "gold", "field": "inventory_count", "target": 50, "reward": 100000},
     {"id": "legendary_1", "name": "Легенда", "emoji": "🔥", "description": "Получить легендарный предмет", "category": "collection", "tier": "silver", "field": "legendary_count", "target": 1, "reward": 10000},
     {"id": "legendary_3", "name": "Мифический", "emoji": "💀", "description": "Получить 3 легендарных", "category": "collection", "tier": "gold", "field": "legendary_count", "target": 3, "reward": 50000},
-    # ── Gang (2 tiers) ──
+    {"id": "legendary_5", "name": "Хранитель Легенд", "emoji": "🏆", "description": "Получить 5 легендарных", "category": "collection", "tier": "gold", "field": "legendary_count", "target": 5, "reward": 150000},
+    # ── Gang (3 tiers) ──
     {"id": "gang_join", "name": "Командный игрок", "emoji": "👥", "description": "Вступить в банду", "category": "gang", "tier": "bronze", "field": "gang_id", "target": 1, "reward": 2000},
     {"id": "gang_territory", "name": "Завоеватель", "emoji": "🗺", "description": "Захватить территорию", "category": "gang", "tier": "silver", "field": "gang_territories", "target": 1, "reward": 15000},
+    {"id": "gang_territory_3", "name": "Империя", "emoji": "🌍", "description": "Захватить 3 территории", "category": "gang", "tier": "gold", "field": "gang_territories", "target": 3, "reward": 75000},
     # ── Prestige (3 tiers) ──
     {"id": "prestige_1", "name": "Перерождение", "emoji": "⚡", "description": "Совершить первый престиж", "category": "prestige", "tier": "bronze", "field": "prestige_level", "target": 1, "reward": 10000},
     {"id": "prestige_3", "name": "Ветеран", "emoji": "🏅", "description": "Достичь 3-го престижа", "category": "prestige", "tier": "silver", "field": "prestige_level", "target": 3, "reward": 50000},
     {"id": "prestige_5", "name": "Бессмертный", "emoji": "💫", "description": "Достичь 5-го престижа", "category": "prestige", "tier": "gold", "field": "prestige_level", "target": 5, "reward": 200000},
-    # ── Casino (3 tiers) ──
+    # ── Casino (4 tiers) ──
     {"id": "casino_10", "name": "Новичок казино", "emoji": "🎰", "description": "Сыграть 10 раз", "category": "casino", "tier": "bronze", "field": "casino_plays", "target": 10, "reward": 2000},
     {"id": "casino_50", "name": "Завсегдатай", "emoji": "🎲", "description": "Сыграть 50 раз", "category": "casino", "tier": "silver", "field": "casino_plays", "target": 50, "reward": 10000},
+    {"id": "casino_100", "name": "Игроман", "emoji": "🃏", "description": "Сыграть 100 раз", "category": "casino", "tier": "gold", "field": "casino_plays", "target": 100, "reward": 30000},
     {"id": "casino_win_20", "name": "Фартовый", "emoji": "🍀", "description": "Выиграть 20 раз", "category": "casino", "tier": "gold", "field": "casino_wins", "target": 20, "reward": 30000},
-    # ── Skins (2 tiers) ──
+    {"id": "casino_win_50", "name": "Король казино", "emoji": "🎰", "description": "Выиграть 50 раз", "category": "casino", "tier": "gold", "field": "casino_wins", "target": 50, "reward": 100000},
+    # ── Skins (3 tiers) ──
     {"id": "skins_5", "name": "Стилист", "emoji": "🎨", "description": "Собрать 5 скинов", "category": "skins", "tier": "bronze", "field": "skins_count", "target": 5, "reward": 5000},
     {"id": "skins_15", "name": "Модник", "emoji": "✨", "description": "Собрать 15 скинов", "category": "skins", "tier": "silver", "field": "skins_count", "target": 15, "reward": 20000},
-    # ── Market (2 tiers) ──
+    {"id": "skins_30", "name": "Коллекционер стиля", "emoji": "🎭", "description": "Собрать 30 скинов", "category": "skins", "tier": "gold", "field": "skins_count", "target": 30, "reward": 75000},
+    # ── Market (3 tiers) ──
     {"id": "market_1", "name": "Торговец", "emoji": "🏪", "description": "Продать предмет на рынке", "category": "market", "tier": "bronze", "field": "market_sales", "target": 1, "reward": 3000},
     {"id": "market_10", "name": "Барыга", "emoji": "💼", "description": "Продать 10 предметов", "category": "market", "tier": "silver", "field": "market_sales", "target": 10, "reward": 20000},
+    {"id": "market_25", "name": "Торговый Магнат", "emoji": "🏦", "description": "Продать 25 предметов", "category": "market", "tier": "gold", "field": "market_sales", "target": 25, "reward": 75000},
     # ── Tournament (2 tiers) ──
     {"id": "tourn_top10", "name": "Турнирный боец", "emoji": "🏆", "description": "Войти в топ-10 турнира", "category": "tournament", "tier": "silver", "field": "tournament_top10", "target": 1, "reward": 25000},
     {"id": "tourn_top3", "name": "Чемпион", "emoji": "🥇", "description": "Войти в топ-3 турнира", "category": "tournament", "tier": "gold", "field": "tournament_top3", "target": 1, "reward": 100000},
@@ -677,6 +710,20 @@ QUEST_LINES = [
         ],
     },
     {
+        "id": "rising_shadow",
+        "name": "Восходящая Тень",
+        "emoji": "🌑",
+        "description": "Укрепи свою власть в криминальном мире",
+        "unlock_level": 10,
+        "steps": [
+            {"trigger": "buy_business", "target": 10, "description": "Владей 10 бизнесами", "reward_type": "cash", "reward_amount": 25000},
+            {"trigger": "robbery", "target": 50, "description": "Соверши 50 ограблений", "reward_type": "cash", "reward_amount": 40000},
+            {"trigger": "pvp_win", "target": 10, "description": "Победи 10 раз в PvP", "reward_type": "cash", "reward_amount": 50000},
+            {"trigger": "territory_capture", "target": 1, "description": "Захвати территорию", "reward_type": "cash", "reward_amount": 75000},
+            {"trigger": "earn_cash", "target": 5000000, "description": "Заработай $5,000,000", "reward_type": "case", "reward_amount": "case_premium"},
+        ],
+    },
+    {
         "id": "shadow_lord",
         "name": "Теневой Лорд",
         "emoji": "😈",
@@ -729,7 +776,7 @@ SEASONAL_EVENTS = [
         "name": "Золотая Лихорадка",
         "emoji": "💰",
         "description": "Деньги на каждом шагу",
-        "active": True,
+        "active": False,
         "bonuses": {"income_multiplier": 1.5, "robbery_multiplier": 1.25, "casino_multiplier": 1.25},
         "score_events": {"earn_cash_10k": 10, "buy_business": 15, "robbery_success": 20, "case_open": 12},
         "milestones": [
@@ -886,6 +933,73 @@ GANG_UPGRADES = {
 
 GANG_CREATE_COST = 10_000
 GANG_MAX_MEMBERS = 20
+
+# ── Weekly Mini-Events (auto-rotating by day of week) ──
+WEEKLY_EVENTS = {
+    0: {"id": "monday_grind", "name": "Рабочий Понедельник", "emoji": "💼", "description": "Бизнес приносит больше", "bonus_type": "income", "multiplier": 1.20},
+    1: {"id": "tuesday_heist", "name": "Вторник Ограблений", "emoji": "🔫", "description": "Награды за ограбления увеличены", "bonus_type": "robbery", "multiplier": 1.25},
+    2: {"id": "wednesday_trade", "name": "Среда Торговли", "emoji": "🏪", "description": "Комиссия рынка снижена", "bonus_type": "market", "multiplier": 0.5},
+    3: {"id": "thursday_luck", "name": "Четверг Удачи", "emoji": "🍀", "description": "Бонус казино", "bonus_type": "casino", "multiplier": 1.15},
+    4: {"id": "friday_war", "name": "Пятница Войны", "emoji": "⚔️", "description": "PvP награды увеличены", "bonus_type": "pvp", "multiplier": 1.30},
+    5: {"id": "saturday_loot", "name": "Субботний Лут", "emoji": "📦", "description": "Шанс редкого дропа выше", "bonus_type": "loot", "multiplier": 1.20},
+    6: {"id": "sunday_rest", "name": "Воскресный Отдых", "emoji": "💰", "description": "Общий доход увеличен", "bonus_type": "income", "multiplier": 1.25},
+}
+
+# ── Gang Heists ──
+GANG_HEISTS = {
+    "warehouse_heist": {
+        "name": "Ограбление склада", "emoji": "📦",
+        "description": "Банда захватывает склад с товаром",
+        "min_members": 2, "min_gang_level": 0,
+        "cooldown": 3600,  # 1 hour
+        "min_reward": 20000, "max_reward": 80000,
+        "reward_per_member": 5000,
+    },
+    "vault_heist": {
+        "name": "Взлом хранилища", "emoji": "🏦",
+        "description": "Проникновение в банковское хранилище",
+        "min_members": 3, "min_gang_level": 3,
+        "cooldown": 7200,  # 2 hours
+        "min_reward": 100000, "max_reward": 300000,
+        "reward_per_member": 15000,
+    },
+    "casino_heist": {
+        "name": "Казино ограбление", "emoji": "🎰",
+        "description": "Дерзкий налёт на казино",
+        "min_members": 4, "min_gang_level": 5,
+        "cooldown": 14400,  # 4 hours
+        "min_reward": 300000, "max_reward": 1000000,
+        "reward_per_member": 40000,
+    },
+}
+
+# ── Gang Wars ──
+GANG_WAR_CONFIG = {
+    "duration": 86400,  # 24 hours
+    "declare_cost": 50000,  # from gang bank
+    "min_gang_level": 3,  # minimum total gang power
+    "score_per_pvp_win": 10,
+    "score_per_territory_capture": 25,
+    "winner_reward": 200000,
+    "loser_reward": 20000,
+}
+
+# ── PvP Equipment Bonuses ──
+PVP_WEAPON_RARITY_BONUS = {
+    "common": 0.01,
+    "uncommon": 0.015,
+    "rare": 0.02,
+    "epic": 0.025,
+    "legendary": 0.03,
+}
+
+PVP_DEFENSE_RARITY_BONUS = {
+    "common": 0.01,
+    "uncommon": 0.02,
+    "rare": 0.03,
+    "epic": 0.04,
+    "legendary": 0.05,
+}
 
 ALL_BUSINESSES = {b["id"]: {**b, "type": "legal"} for b in LEGAL_BUSINESSES}
 ALL_BUSINESSES.update({b["id"]: {**b, "type": "shadow"} for b in SHADOW_BUSINESSES})

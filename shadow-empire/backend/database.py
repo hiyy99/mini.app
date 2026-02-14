@@ -310,6 +310,30 @@ async def init_db():
         FOREIGN KEY (telegram_id) REFERENCES players(telegram_id),
         UNIQUE(telegram_id, talent_id)
     );
+
+    CREATE TABLE IF NOT EXISTS gang_heists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gang_id INTEGER NOT NULL,
+        heist_type TEXT NOT NULL,
+        status TEXT DEFAULT 'recruiting',
+        participants TEXT DEFAULT '',
+        started_at REAL DEFAULT (strftime('%s','now')),
+        executed_at REAL DEFAULT 0,
+        total_reward REAL DEFAULT 0,
+        FOREIGN KEY (gang_id) REFERENCES gangs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS gang_wars (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        attacker_gang_id INTEGER NOT NULL,
+        defender_gang_id INTEGER NOT NULL,
+        attacker_score INTEGER DEFAULT 0,
+        defender_score INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        started_at REAL DEFAULT (strftime('%s','now')),
+        ended_at REAL DEFAULT 0,
+        winner_gang_id INTEGER DEFAULT 0
+    );
     """)
 
     # ── Migrations (safe ALTER TABLE) ──
@@ -334,6 +358,8 @@ async def init_db():
         ("players", "bosses_killed", "ALTER TABLE players ADD COLUMN bosses_killed INTEGER DEFAULT 0"),
         ("players", "talent_points", "ALTER TABLE players ADD COLUMN talent_points INTEGER DEFAULT 0"),
         ("players", "pvp_cooldown_ts", "ALTER TABLE players ADD COLUMN pvp_cooldown_ts REAL DEFAULT 0"),
+        ("players", "notifications_enabled", "ALTER TABLE players ADD COLUMN notifications_enabled INTEGER DEFAULT 1"),
+        ("gangs", "last_heist_ts", "ALTER TABLE gangs ADD COLUMN last_heist_ts REAL DEFAULT 0"),
     ]
     for table, column, sql in migrations:
         try:

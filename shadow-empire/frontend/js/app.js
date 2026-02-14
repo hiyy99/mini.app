@@ -33,6 +33,10 @@ let S = {
     achievementCategories: {}, tierInfo: {},
     // Talent Tree
     talentTreeCfg: {}, playerTalents: {}, talentPoints: 0,
+    // Weekly event
+    weeklyEvent: null,
+    // Gang heists & wars
+    gangHeistsCfg: {}, gangWarCfg: {},
 };
 
 // ── Adsgram SDK ──
@@ -122,6 +126,11 @@ async function init() {
         S.talentTreeCfg = r.talent_tree_config || {};
         S.playerTalents = r.player_talents || {};
         S.talentPoints = r.talent_points || 0;
+        // Weekly event
+        S.weeklyEvent = r.weekly_event || null;
+        // Gang heists & wars
+        S.gangHeistsCfg = r.gang_heists_config || {};
+        S.gangWarCfg = r.gang_war_config || {};
 
         renderAll(); hideLoading(); startLoop();
 
@@ -205,6 +214,7 @@ function renderAll() {
     renderMissions(); renderPrestige(); renderTalentTree(); renderTerritories(); renderAchievements();
     renderLeaderboard(); renderVipShop(); updateAdButtons(); updateVipBadges();
     renderTournament(); renderQuests(); renderEventBanner(); renderBoss();
+    renderWeeklyEventBanner();
 }
 
 function updateHUD() {
@@ -1997,15 +2007,16 @@ function switchCharSubTab(section, btn) {
 function switchGangSubTab(section, btn) {
     btn.closest('.sub-tabs').querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    $('#gang-main').classList.toggle('hidden', section !== 'gang-main');
-    $('#gang-territories').classList.toggle('hidden', section !== 'gang-territories');
-    $('#gang-pvp').classList.toggle('hidden', section !== 'gang-pvp');
-    $('#gang-tournament').classList.toggle('hidden', section !== 'gang-tournament');
-    $('#gang-boss').classList.toggle('hidden', section !== 'gang-boss');
-    $('#gang-leaderboard').classList.toggle('hidden', section !== 'gang-leaderboard');
+    const sections = ['gang-main','gang-territories','gang-pvp','gang-heists','gang-wars','gang-tournament','gang-boss','gang-leaderboard'];
+    sections.forEach(s => {
+        const el = document.getElementById(s);
+        if (el) el.classList.toggle('hidden', s !== section);
+    });
     if (section === 'gang-leaderboard') loadLeaderboard();
     if (section === 'gang-tournament') loadTournamentLeaderboard();
     if (section === 'gang-boss') loadBossData();
+    if (section === 'gang-heists') renderHeists();
+    if (section === 'gang-wars') loadGangWars();
 }
 
 // ── Popup ──
@@ -2577,6 +2588,138 @@ async function attackBoss() {
             showPopup('⚔️', 'Удар!', '', `Урон: ${r.damage}`, '');
         }
         renderBoss();
+    } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+// ── Weekly Event Banner ──
+function renderWeeklyEventBanner() {
+    const banner = $('#weekly-event-banner');
+    if (!banner) return;
+    if (!S.weeklyEvent) { banner.classList.add('hidden'); return; }
+    banner.classList.remove('hidden');
+    $('#weekly-event-emoji').textContent = S.weeklyEvent.emoji;
+    $('#weekly-event-name').textContent = S.weeklyEvent.name;
+    $('#weekly-event-desc').textContent = S.weeklyEvent.description;
+}
+
+// ── Gang Heists ──
+function renderHeists() {
+    const el = $('#heists-section');
+    if (!el) return;
+    if (!S.player || !S.player.gang_id) {
+        el.innerHTML = '<p style="text-align:center;color:var(--text2)">Вступи в банду для участия в налётах</p>';
+        return;
+    }
+    let html = '<div class="heists-list">';
+    for (const [hid, cfg] of Object.entries(S.gangHeistsCfg)) {
+        html += `<div class="gang-upgrade-card" style="flex-direction:column;align-items:stretch">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                <span style="font-size:1.5rem">${cfg.emoji}</span>
+                <div>
+                    <div style="font-weight:700">${cfg.name}</div>
+                    <div style="font-size:.78rem;color:var(--text2)">${cfg.description}</div>
+                    <div style="font-size:.75rem;color:var(--gold)">Мин. участников: ${cfg.min_members} | Награда: $${fmt(cfg.min_reward)}-$${fmt(cfg.max_reward)}</div>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="startHeist('${hid}')" style="width:100%">🏴 Начать налёт</button>
+        </div>`;
+    }
+    html += '</div>';
+    html += '<div id="active-heist" style="margin-top:12px"></div>';
+    el.innerHTML = html;
+    loadActiveHeist();
+}
+
+async function loadActiveHeist() {
+    // We'll just show active heist if any
+    const el = document.getElementById('active-heist');
+    if (!el) return;
+    // No dedicated endpoint yet — user starts/joins/executes
+    el.innerHTML = '';
+}
+
+async function startHeist(heistType) {
+    if (!S.player) return;
+    try {
+        const r = await api('/api/gang/heist/start', { telegram_id: S.player.telegram_id, heist_type: heistType });
+        showPopup('🏴', 'Налёт начат!', r.config.name, 'Ожидание участников...', '');
+    } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+async function joinHeist(heistId) {
+    if (!S.player) return;
+    try {
+        const r = await api('/api/gang/heist/join', { telegram_id: S.player.telegram_id, heist_id: heistId });
+        showPopup('✅', 'Присоединился!', '', `Участников: ${r.participant_count}`, '');
+    } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+async function executeHeist(heistId) {
+    if (!S.player) return;
+    try {
+        const r = await api('/api/gang/heist/execute', { telegram_id: S.player.telegram_id, heist_id: heistId });
+        showPopup('💰', 'Налёт успешен!', `Участников: ${r.participants}`, `+$${fmt(r.share)} твоя доля`, `Общая добыча: $${fmt(r.total_reward)}`);
+        S.displayCash += r.share;
+        updateHUD();
+    } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+// ── Gang Wars ──
+async function loadGangWars() {
+    const el = $('#wars-section');
+    if (!el) return;
+    if (!S.player || !S.player.gang_id) {
+        el.innerHTML = '<p style="text-align:center;color:var(--text2)">Вступи в банду для участия в войнах</p>';
+        return;
+    }
+    try {
+        const r = await fetch(API + '/api/gang/war/' + S.player.gang_id).then(r => r.json());
+        const wars = r.wars || [];
+        let html = '';
+
+        // Declare war button
+        html += `<div style="margin-bottom:12px">
+            <div style="display:flex;gap:8px;align-items:center">
+                <input class="gang-input" id="war-target-gang" type="number" placeholder="ID вражеской банды" style="flex:1;margin:0">
+                <button class="btn btn-primary" onclick="declareWar()" style="white-space:nowrap">⚔️ Объявить ($${fmt(S.gangWarCfg.declare_cost || 50000)})</button>
+            </div>
+        </div>`;
+
+        if (wars.length === 0) {
+            html += '<p style="text-align:center;color:var(--text2)">Нет войн</p>';
+        } else {
+            for (const w of wars) {
+                const isAttacker = w.attacker_gang_id === S.player.gang_id;
+                const yourScore = isAttacker ? w.attacker_score : w.defender_score;
+                const theirScore = isAttacker ? w.defender_score : w.attacker_score;
+                const enemyName = isAttacker ? `[${w.defender_tag}] ${w.defender_name}` : `[${w.attacker_tag}] ${w.attacker_name}`;
+                const statusText = w.status === 'active' ? '🔴 Идёт' : (w.winner_gang_id === S.player.gang_id ? '🏆 Победа' : (w.winner_gang_id === 0 ? '🤝 Ничья' : '😞 Поражение'));
+                html += `<div class="gang-upgrade-card" style="flex-direction:column;align-items:stretch;margin-bottom:8px">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                        <span style="font-weight:700">vs ${enemyName}</span>
+                        <span>${statusText}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-around;font-size:.9rem">
+                        <span style="color:var(--green)">Мы: ${yourScore}</span>
+                        <span style="color:var(--red)">Они: ${theirScore}</span>
+                    </div>
+                </div>`;
+            }
+        }
+        el.innerHTML = html;
+    } catch (e) {
+        el.innerHTML = '<p style="text-align:center;color:var(--text2)">Ошибка загрузки</p>';
+    }
+}
+
+async function declareWar() {
+    if (!S.player) return;
+    const targetId = parseInt(document.getElementById('war-target-gang')?.value);
+    if (!targetId) { showPopup('❌', 'Ошибка', '', 'Введи ID банды', ''); return; }
+    try {
+        await api('/api/gang/war/declare', { telegram_id: S.player.telegram_id, target_gang_id: targetId });
+        showPopup('⚔️', 'Война объявлена!', '', '', '');
+        loadGangWars();
     } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
 
