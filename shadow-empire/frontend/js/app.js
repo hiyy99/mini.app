@@ -57,18 +57,26 @@ try {
     }
 } catch(e) { console.log('TON Connect not available'); }
 
+// ── HTML Sanitization ──
+function escapeHtml(str) {
+    if (typeof str !== 'string') return str;
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
 // ── Init ──
 async function init() {
     if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor('#0a0a0f'); tg.setBackgroundColor('#0a0a0f'); }
-    const tid = tg?.initDataUnsafe?.user?.id || 12345;
+    const tid = tg?.initDataUnsafe?.user?.id;
+    if (!tid) { document.body.innerHTML = '<div style="color:#fff;text-align:center;padding:40px;font-size:1.1rem">Откройте игру через Telegram</div>'; return; }
     const uname = tg?.initDataUnsafe?.user?.username || 'player';
+    const initData = tg?.initData || '';
     // Get referral code from URL param or Telegram startParam
     const urlParams = new URLSearchParams(window.location.search);
     const refFromUrl = urlParams.get('ref') || '';
     const refFromTg = tg?.initDataUnsafe?.start_param || '';
     const refCode = refFromUrl || refFromTg;
     try {
-        const r = await api('/api/init', { telegram_id: tid, username: uname, referral_code: refCode });
+        const r = await api('/api/init', { telegram_id: tid, username: uname, referral_code: refCode, init_data: initData });
         S.player = r.player; S.businesses = r.businesses;
         S.legalCfg = r.legal_businesses; S.shadowCfg = r.shadow_businesses;
         S.robberiesCfg = r.robberies; S.casinoCfg = r.casino_games;
@@ -131,6 +139,10 @@ async function init() {
         // Gang heists & wars
         S.gangHeistsCfg = r.gang_heists_config || {};
         S.gangWarCfg = r.gang_war_config || {};
+        // Season Pass
+        S.seasonPass = r.season_pass || {};
+        S.seasonPassCfg = r.season_pass_config || {};
+        S.seasonPassRewards = r.season_pass_rewards || {};
 
         renderAll(); hideLoading(); startLoop();
 
@@ -601,7 +613,7 @@ function renderTerritories() {
     let html = '';
     for (const t of S.territories) {
         const owned = t.owner_gang_id === gangId && gangId > 0;
-        const ownerText = t.gang_name ? `[${t.gang_tag}] ${t.gang_name}` : 'Свободна';
+        const ownerText = t.gang_name ? `[${escapeHtml(t.gang_tag)}] ${escapeHtml(t.gang_name)}` : 'Свободна';
         html += `<div class="territory-card ${owned ? 'territory-owned' : ''}">
             <div class="territory-header">
                 <span class="territory-emoji">${t.emoji}</span>
@@ -695,7 +707,7 @@ async function loadLeaderboard() {
             html += `<div class="lb-row ${isMe ? 'lb-me' : ''}">
                 <span class="lb-rank">${medal}</span>
                 <div class="lb-info">
-                    <div class="lb-name">${p.username || 'Игрок'}</div>
+                    <div class="lb-name">${escapeHtml(p.username) || 'Игрок'}</div>
                     <div class="lb-stats">💰 $${fmt(p.total_earned)} | 😈${p.reputation_fear} 🤝${p.reputation_respect}</div>
                 </div>
                 <div class="lb-cash">$${fmt(p.cash)}</div>
@@ -900,7 +912,7 @@ function renderMarketListings() {
             <div class="shop-item-info">
                 <div class="shop-item-name" style="color:${rarityColor(r)}">${item.name}</div>
                 <div class="shop-item-rarity">${rarityName(r)} ${bonus ? '• ' + bonus : ''}</div>
-                <div class="shop-item-desc">Продавец: ${l.seller_name || 'Игрок'}</div>
+                <div class="shop-item-desc">Продавец: ${escapeHtml(l.seller_name) || 'Игрок'}</div>
             </div>
             <div class="shop-item-actions">
                 ${alreadyOwned ? '<button class="btn-shop" disabled>Уже есть</button>'
@@ -921,7 +933,7 @@ function renderGang() {
             <p style="margin-bottom:8px;font-size:.85rem">Создай свою банду или вступи в существующую</p>
             <input class="gang-input" id="gang-name-input" placeholder="Название банды">
             <input class="gang-input" id="gang-tag-input" placeholder="Тег (1-4 символа)">
-            <button class="btn btn-primary" onclick="createGang()" style="width:100%">Создать банду ($10,000)</button>
+            <button class="btn btn-primary" onclick="createGang()" style="width:100%">Создать банду ($50,000)</button>
             <div id="gangs-list" style="margin-top:12px"></div>
             <button class="btn btn-primary" onclick="loadGangs()" style="width:100%;margin-top:8px;background:var(--blue)">Показать банды</button>
         </div>`;
@@ -943,7 +955,7 @@ async function loadGangDetail(gangId) {
         let html = `<div class="gang-header-card">
             <div class="gang-header-top">
                 <div class="gang-header-info">
-                    <div class="gang-header-name">[${g.tag}] ${g.name}</div>
+                    <div class="gang-header-name">[${escapeHtml(g.tag)}] ${escapeHtml(g.name)}</div>
                     <div class="gang-header-stats">
                         👥 ${members.length}/${20} участников &nbsp;|&nbsp; ⚡ Сила: ${g.power}
                     </div>
@@ -1000,7 +1012,7 @@ async function loadGangDetail(gangId) {
             const roleIcon = m.role === 'leader' ? '👑' : '👤';
             html += `<div class="gang-member-row ${isMe ? 'gang-member-me' : ''}">
                 <span class="gang-member-role">${roleIcon}</span>
-                <span class="gang-member-name">${m.username || 'Игрок'}</span>
+                <span class="gang-member-name">${escapeHtml(m.username) || 'Игрок'}</span>
                 ${isLeader && !isMe ? `<button class="btn-gang-kick" onclick="gangKick(${m.telegram_id})">Кикнуть</button>` : ''}
             </div>`;
         }
@@ -1012,7 +1024,7 @@ async function loadGangDetail(gangId) {
                 <h3>📋 Журнал</h3>
                 <div class="gang-log-list">`;
             for (const entry of log) {
-                html += `<div class="gang-log-entry">${entry.message}</div>`;
+                html += `<div class="gang-log-entry">${escapeHtml(entry.message)}</div>`;
             }
             html += `</div></div>`;
         }
@@ -1565,7 +1577,7 @@ async function loadGangs() {
         if (!r.gangs.length) { el.innerHTML = '<p style="color:var(--text2);font-size:.8rem">Банд пока нет</p>'; return; }
         for (const g of r.gangs) {
             el.innerHTML += `<div class="gang-card">
-                <div><strong>[${g.tag}] ${g.name}</strong><br><small>${g.members || 1} чел. | ⚡${g.power}</small></div>
+                <div><strong>[${escapeHtml(g.tag)}] ${escapeHtml(g.name)}</strong><br><small>${g.members || 1} чел. | ⚡${g.power}</small></div>
                 <button class="btn-buy" onclick="joinGang(${g.id})">Вступить</button></div>`;
         }
     } catch(e) {}
@@ -1849,7 +1861,7 @@ async function loadPvpTargets() {
         if (!r.targets.length) { el.innerHTML = '<p style="color:var(--text2);font-size:.8rem">Нет целей</p>'; return; }
         for (const t of r.targets) {
             el.innerHTML += `<div class="pvp-target">
-                <div class="pvp-target-info"><strong>${t.username||'Игрок'}</strong><br>
+                <div class="pvp-target-info"><strong>${escapeHtml(t.username)||'Игрок'}</strong><br>
                 <small>😈${t.reputation_fear} 🤝${t.reputation_respect}</small></div>
                 <button class="btn-attack" onclick="pvpAttack(${t.telegram_id})">⚔️ Напасть</button></div>`;
         }
@@ -1870,8 +1882,9 @@ async function pvpAttack(targetId) {
 async function claimMission(missionId) {
     try {
         const r = await api('/api/mission/claim', { telegram_id: S.player.telegram_id, mission_id: missionId });
+        const oldCash = S.displayCash;
         S.player = r.player; S.dailyMissions = r.daily_missions; S.displayCash = r.player.cash;
-        showPopup('📋', 'Миссия выполнена!', '', '+$' + fmt(r.player.cash - S.displayCash + r.player.cash), '');
+        showPopup('📋', 'Миссия выполнена!', '', '+$' + fmt(r.player.cash - oldCash), '');
         renderMissions(); updateHUD();
     } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
@@ -1995,6 +2008,8 @@ function switchDelaSubTab(section, btn) {
     $('#dela-robberies').classList.toggle('hidden', section !== 'robberies');
     $('#dela-missions').classList.toggle('hidden', section !== 'missions');
     $('#dela-quests').classList.toggle('hidden', section !== 'quests');
+    $('#dela-season-pass').classList.toggle('hidden', section !== 'season-pass');
+    if (section === 'season-pass') renderSeasonPass();
 }
 
 function switchCharSubTab(section, btn) {
@@ -2033,10 +2048,12 @@ function showPopup(icon, title, body, amount, sub) {
 function closePopup() { $('#popup-overlay').classList.add('hidden'); }
 
 // ── Misc helpers ──
+const _cdTimers = {};
 function startCd(id, sec) {
+    if (_cdTimers[id]) { clearInterval(_cdTimers[id]); delete _cdTimers[id]; }
     let r = sec;
-    const iv = setInterval(() => {
-        r-=1; if(r<=0){clearInterval(iv);renderRobberies();return;}
+    _cdTimers[id] = setInterval(() => {
+        r-=1; if(r<=0){clearInterval(_cdTimers[id]);delete _cdTimers[id];renderRobberies();return;}
         const el = $(`#cd-${id}`); if(el) el.textContent='⏳ '+fmtTime(r);
     }, 1000);
 }
@@ -2065,8 +2082,7 @@ function updateAdButtons() {
 // ── Watch Ad (Adsgram) ──
 async function watchAd(rewardType) {
     if (!AdController) {
-        // Fallback: call API directly (for testing without Adsgram)
-        claimAdReward(rewardType);
+        showPopup('📺', 'Ошибка', '', 'Реклама недоступна', 'Откройте игру через Telegram');
         return;
     }
     try {
@@ -2379,7 +2395,7 @@ async function loadTournamentLeaderboard() {
                 html += `<div class="lb-row ${isMe ? 'lb-me' : ''}">
                     <span class="lb-rank">${medal}</span>
                     <div class="lb-info">
-                        <div class="lb-name">${p.username || 'Игрок'}</div>
+                        <div class="lb-name">${escapeHtml(p.username) || 'Игрок'}</div>
                         <div class="lb-stats">${prize ? 'Приз: ' + prize : ''}</div>
                     </div>
                     <div class="lb-cash">${p.score} очк.</div>
@@ -2557,7 +2573,7 @@ function renderBoss() {
             const isMe = S.player && a.telegram_id === S.player.telegram_id;
             html += `<div class="boss-atk-row ${isMe ? 'lb-me' : ''}">
                 <span class="boss-atk-rank">#${i + 1}</span>
-                <span class="boss-atk-name">${a.username || 'Игрок'}</span>
+                <span class="boss-atk-name">${escapeHtml(a.username) || 'Игрок'}</span>
                 <span class="boss-atk-dmg">${fmt(a.total_dmg)} урона</span>
             </div>`;
         });
@@ -2692,7 +2708,7 @@ async function loadGangWars() {
                 const isAttacker = w.attacker_gang_id === S.player.gang_id;
                 const yourScore = isAttacker ? w.attacker_score : w.defender_score;
                 const theirScore = isAttacker ? w.defender_score : w.attacker_score;
-                const enemyName = isAttacker ? `[${w.defender_tag}] ${w.defender_name}` : `[${w.attacker_tag}] ${w.attacker_name}`;
+                const enemyName = isAttacker ? `[${escapeHtml(w.defender_tag)}] ${escapeHtml(w.defender_name)}` : `[${escapeHtml(w.attacker_tag)}] ${escapeHtml(w.attacker_name)}`;
                 const statusText = w.status === 'active' ? '🔴 Идёт' : (w.winner_gang_id === S.player.gang_id ? '🏆 Победа' : (w.winner_gang_id === 0 ? '🤝 Ничья' : '😞 Поражение'));
                 html += `<div class="gang-upgrade-card" style="flex-direction:column;align-items:stretch;margin-bottom:8px">
                     <div style="display:flex;justify-content:space-between;margin-bottom:4px">
@@ -2721,6 +2737,99 @@ async function declareWar() {
         showPopup('⚔️', 'Война объявлена!', '', '', '');
         loadGangWars();
     } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+// ── Season Pass ──
+function renderSeasonPass() {
+    const el = $('#season-pass-content');
+    if (!el) return;
+    const sp = S.seasonPass || {};
+    const cfg = S.seasonPassCfg || {};
+    const rewards = S.seasonPassRewards || {};
+    const xp = sp.xp || 0;
+    const maxLevel = cfg.max_level || 30;
+    const xpPerLevel = cfg.xp_per_level || 100;
+    const currentLevel = Math.min(Math.floor(xp / xpPerLevel) + 1, maxLevel);
+    const xpInLevel = xp - (currentLevel - 1) * xpPerLevel;
+    const xpNeeded = currentLevel >= maxLevel ? xpPerLevel : xpPerLevel;
+    const progressPct = currentLevel >= maxLevel ? 100 : Math.min(100, Math.floor((xpInLevel / xpNeeded) * 100));
+    const isPremium = sp.is_premium === 1;
+    const freeClaimed = sp.free_claimed ? new Set(sp.free_claimed.split(',')) : new Set();
+    const premiumClaimed = sp.premium_claimed ? new Set(sp.premium_claimed.split(',')) : new Set();
+
+    let html = `<div class="season-pass-header">
+        <div class="sp-title">${cfg.emoji || '🏴'} ${cfg.name || 'Season Pass'}</div>
+        <div class="sp-level">Уровень <span class="sp-level-num">${currentLevel}</span> / ${maxLevel}</div>
+        <div class="sp-xp-bar"><div class="sp-xp-fill" style="width:${progressPct}%"></div></div>
+        <div class="sp-xp-text">${xpInLevel >= 0 ? xpInLevel : 0} / ${xpNeeded} XP</div>`;
+
+    if (!isPremium) {
+        html += `<button class="btn-buy-premium" onclick="buySeasonPremium()">👑 Купить Премиум — ${cfg.premium_stars || 500}⭐</button>`;
+    } else {
+        html += `<div class="sp-premium-badge">👑 Премиум активен</div>`;
+    }
+    html += `</div><div class="sp-rewards-list">`;
+
+    for (let lvl = 1; lvl <= maxLevel; lvl++) {
+        const r = rewards[lvl] || rewards[String(lvl)];
+        if (!r) continue;
+        const reached = currentLevel >= lvl;
+        const freeR = r.free;
+        const premR = r.premium;
+        const freeDone = freeClaimed.has(String(lvl));
+        const premDone = premiumClaimed.has(String(lvl));
+        const isCurrent = currentLevel === lvl;
+
+        html += `<div class="sp-row${isCurrent ? ' sp-current' : ''}${!reached ? ' sp-locked' : ''}">
+            <div class="sp-lvl">${lvl}</div>
+            <div class="sp-reward sp-free">
+                <div class="sp-reward-label">🆓 ${formatReward(freeR)}</div>
+                ${freeDone ? '<span class="sp-claimed">✅</span>'
+                    : reached ? `<button class="sp-claim-btn" onclick="claimSeasonReward(${lvl},'free')">Забрать</button>`
+                    : '<span class="sp-not-reached">🔒</span>'}
+            </div>
+            <div class="sp-reward sp-prem">
+                <div class="sp-reward-label">👑 ${formatReward(premR)}</div>
+                ${!isPremium ? '<span class="sp-not-reached">🔒</span>'
+                    : premDone ? '<span class="sp-claimed">✅</span>'
+                    : reached ? `<button class="sp-claim-btn sp-prem-btn" onclick="claimSeasonReward(${lvl},'premium')">Забрать</button>`
+                    : '<span class="sp-not-reached">🔒</span>'}
+            </div>
+        </div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+}
+
+function formatReward(r) {
+    if (!r) return '—';
+    if (r.type === 'cash') return `$${fmt(r.amount)}`;
+    if (r.type === 'case') {
+        const c = S.casesCfg?.[r.case_id];
+        return c ? `${c.emoji} ${c.name}` : r.case_id;
+    }
+    if (r.type === 'cash_and_case') {
+        const c = S.casesCfg?.[r.case_id];
+        return `$${fmt(r.amount)} + ${c ? c.emoji + ' ' + c.name : r.case_id}`;
+    }
+    return '—';
+}
+
+async function claimSeasonReward(level, track) {
+    try {
+        const r = await api('/api/season/claim', { telegram_id: S.player.telegram_id, level, track });
+        if (r.player) S.player = r.player;
+        if (r.season_pass) S.seasonPass = r.season_pass;
+        if (r.player_cases) S.playerCases = r.player_cases;
+        renderSeasonPass();
+        renderAll();
+        const reward = (S.seasonPassRewards[level] || S.seasonPassRewards[String(level)])?.[track];
+        showPopup('🎁', 'Награда получена!', '', reward ? formatReward(reward) : '', '');
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+async function buySeasonPremium() {
+    buyWithStars('season_1_premium');
 }
 
 document.addEventListener('DOMContentLoaded', init);

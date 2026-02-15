@@ -6,31 +6,31 @@ LEGAL_BUSINESSES = [
     {
         "id": "car_wash", "name": "Автомойка", "emoji": "🚗",
         "base_cost": 800, "base_income": 3, "suspicion_reduce": 0.8,
-        "cost_multiplier": 1.7, "income_multiplier": 1.15,
+        "cost_multiplier": 2.0, "income_multiplier": 1.10,
         "manager_cost": 5000, "unlock_level": 0,
     },
     {
         "id": "cafe", "name": "Кафе", "emoji": "☕",
         "base_cost": 5000, "base_income": 15, "suspicion_reduce": 1.5,
-        "cost_multiplier": 1.8, "income_multiplier": 1.15,
+        "cost_multiplier": 2.1, "income_multiplier": 1.10,
         "manager_cost": 25000, "unlock_level": 0,
     },
     {
         "id": "restaurant", "name": "Ресторан", "emoji": "🍽",
         "base_cost": 25000, "base_income": 60, "suspicion_reduce": 3.0,
-        "cost_multiplier": 1.85, "income_multiplier": 1.18,
+        "cost_multiplier": 2.15, "income_multiplier": 1.12,
         "manager_cost": 120000, "unlock_level": 3,
     },
     {
         "id": "hotel", "name": "Отель", "emoji": "🏨",
         "base_cost": 150000, "base_income": 250, "suspicion_reduce": 5.0,
-        "cost_multiplier": 2.0, "income_multiplier": 1.18,
+        "cost_multiplier": 2.3, "income_multiplier": 1.12,
         "manager_cost": 600000, "unlock_level": 5,
     },
     {
         "id": "bank", "name": "Банк", "emoji": "🏦",
         "base_cost": 800000, "base_income": 1200, "suspicion_reduce": 10.0,
-        "cost_multiplier": 2.2, "income_multiplier": 1.2,
+        "cost_multiplier": 2.5, "income_multiplier": 1.14,
         "manager_cost": 4000000, "unlock_level": 8,
     },
 ]
@@ -39,31 +39,31 @@ SHADOW_BUSINESSES = [
     {
         "id": "street_dealer", "name": "Точка на районе", "emoji": "🌿",
         "base_cost": 1200, "base_income": 7, "suspicion_add": 0.5,
-        "cost_multiplier": 1.7, "income_multiplier": 1.18,
+        "cost_multiplier": 2.0, "income_multiplier": 1.12,
         "manager_cost": 8000, "unlock_level": 0,
     },
     {
         "id": "speakeasy", "name": "Подпольный бар", "emoji": "🥃",
         "base_cost": 8000, "base_income": 30, "suspicion_add": 1.0,
-        "cost_multiplier": 1.8, "income_multiplier": 1.18,
+        "cost_multiplier": 2.1, "income_multiplier": 1.12,
         "manager_cost": 45000, "unlock_level": 0,
     },
     {
         "id": "casino", "name": "Подпольное казино", "emoji": "🎰",
         "base_cost": 45000, "base_income": 120, "suspicion_add": 2.0,
-        "cost_multiplier": 1.85, "income_multiplier": 1.2,
+        "cost_multiplier": 2.15, "income_multiplier": 1.14,
         "manager_cost": 200000, "unlock_level": 3,
     },
     {
         "id": "laundering", "name": "Отмывочная", "emoji": "🧺",
         "base_cost": 200000, "base_income": 500, "suspicion_add": 3.5,
-        "cost_multiplier": 2.0, "income_multiplier": 1.2,
+        "cost_multiplier": 2.3, "income_multiplier": 1.14,
         "manager_cost": 900000, "unlock_level": 6,
     },
     {
         "id": "syndicate", "name": "Синдикат", "emoji": "🕴",
         "base_cost": 1200000, "base_income": 2500, "suspicion_add": 6.0,
-        "cost_multiplier": 2.2, "income_multiplier": 1.22,
+        "cost_multiplier": 2.5, "income_multiplier": 1.15,
         "manager_cost": 6000000, "unlock_level": 9,
     },
 ]
@@ -71,32 +71,32 @@ SHADOW_BUSINESSES = [
 ROBBERIES = [
     {
         "id": "pickpocket", "name": "Карманная кража", "emoji": "👛",
-        "min_reward": 50, "max_reward": 250, "success_chance": 0.75,
+        "min_reward": 200, "max_reward": 1000, "success_chance": 0.75,
         "suspicion_gain": 5.0, "cooldown_seconds": 120, "unlock_level": 0,
     },
     {
         "id": "shop_robbery", "name": "Ограбление магазина", "emoji": "🏪",
-        "min_reward": 400, "max_reward": 1500, "success_chance": 0.55,
+        "min_reward": 2000, "max_reward": 8000, "success_chance": 0.55,
         "suspicion_gain": 12.0, "cooldown_seconds": 600, "unlock_level": 2,
     },
     {
         "id": "warehouse", "name": "Налёт на склад", "emoji": "📦",
-        "min_reward": 2500, "max_reward": 8000, "success_chance": 0.40,
+        "min_reward": 15000, "max_reward": 50000, "success_chance": 0.45,
         "suspicion_gain": 20.0, "cooldown_seconds": 1800, "unlock_level": 5,
     },
     {
         "id": "bank_heist", "name": "Ограбление банка", "emoji": "🏦",
-        "min_reward": 12000, "max_reward": 40000, "success_chance": 0.22,
+        "min_reward": 80000, "max_reward": 300000, "success_chance": 0.28,
         "suspicion_gain": 40.0, "cooldown_seconds": 7200, "unlock_level": 8,
     },
 ]
 
 # ── Casino ──
 CASINO_GAMES = {
-    "coinflip": {"name": "Монетка", "emoji": "🪙", "min_bet": 10, "max_bet": 50000},
-    "dice": {"name": "Кости", "emoji": "🎲", "min_bet": 10, "max_bet": 50000},
-    "slots": {"name": "Слоты", "emoji": "🎰", "min_bet": 50, "max_bet": 100000},
-    "roulette": {"name": "Рулетка", "emoji": "🎡", "min_bet": 20, "max_bet": 100000},
+    "coinflip": {"name": "Монетка", "emoji": "🪙", "min_bet": 10, "max_bet": 500000},
+    "dice": {"name": "Кости", "emoji": "🎲", "min_bet": 10, "max_bet": 500000},
+    "slots": {"name": "Слоты", "emoji": "🎰", "min_bet": 50, "max_bet": 1000000},
+    "roulette": {"name": "Рулетка", "emoji": "🎡", "min_bet": 20, "max_bet": 1000000},
 }
 
 # ── Upgrades / Money Sinks ──
@@ -447,10 +447,10 @@ CASES = {
 MARKET_COMMISSION = 0.10
 
 # Suspicion thresholds
-RAID_THRESHOLD = 70.0
-SUSPICION_DECAY_PER_SEC = 0.03
+RAID_THRESHOLD = 80.0
+SUSPICION_DECAY_PER_SEC = 0.08
 MAX_SUSPICION = 100.0
-RAID_CASH_PENALTY = 0.5
+RAID_CASH_PENALTY = 0.3
 
 # Reputation bonuses
 FEAR_SHADOW_DISCOUNT = 0.01
@@ -462,8 +462,8 @@ RESPECT_SUSPICION_REDUCE = 0.005
 REFERRAL_BONUS = 1000
 
 # PvP
-PVP_COOLDOWN_SECONDS = 900
-PVP_STEAL_PERCENT = 0.08
+PVP_COOLDOWN_SECONDS = 600
+PVP_STEAL_PERCENT = 0.15
 PVP_MIN_CASH_TO_ATTACK = 2000
 
 # ── Daily Missions ──
@@ -491,7 +491,7 @@ LOGIN_REWARDS = [
     {"day": 5, "type": "cash", "amount": 4000, "label": "$4,000"},
     {"day": 6, "type": "case", "case_id": "case_basic", "label": "📦 Базовый кейс"},
     {"day": 7, "type": "cash", "amount": 8000, "label": "$8,000"},
-    {"day": 8, "type": "cash", "amount": 3000, "label": "$3,000"},
+    {"day": 8, "type": "cash", "amount": 5000, "label": "$5,000"},
     {"day": 9, "type": "cash", "amount": 5000, "label": "$5,000"},
     {"day": 10, "type": "cash", "amount": 7000, "label": "$7,000"},
     {"day": 11, "type": "cash", "amount": 10000, "label": "$10,000"},
@@ -720,7 +720,7 @@ QUEST_LINES = [
             {"trigger": "robbery", "target": 50, "description": "Соверши 50 ограблений", "reward_type": "cash", "reward_amount": 40000},
             {"trigger": "pvp_win", "target": 10, "description": "Победи 10 раз в PvP", "reward_type": "cash", "reward_amount": 50000},
             {"trigger": "territory_capture", "target": 1, "description": "Захвати территорию", "reward_type": "cash", "reward_amount": 75000},
-            {"trigger": "earn_cash", "target": 5000000, "description": "Заработай $5,000,000", "reward_type": "case", "reward_amount": "case_premium"},
+            {"trigger": "earn_cash", "target": 5000000, "description": "Заработай $5,000,000", "reward_type": "case", "reward_amount": "case_legendary"},
         ],
     },
     {
@@ -876,6 +876,7 @@ TON_PRICES = {
     "cash_mega":    0.5,
     "case_premium_x3": 0.15,
     "case_legend_x1":  0.25,
+    "season_1_premium": 2.5,
 }
 
 TON_WALLET_ADDRESS = "UQACgXUC3WxvB1ykvD_ah3f1qpsCkZLHLovExKBYKxzvVOu2"
@@ -931,7 +932,7 @@ GANG_UPGRADES = {
     },
 }
 
-GANG_CREATE_COST = 10_000
+GANG_CREATE_COST = 50_000
 GANG_MAX_MEMBERS = 20
 
 # ── Weekly Mini-Events (auto-rotating by day of week) ──
@@ -999,6 +1000,59 @@ PVP_DEFENSE_RARITY_BONUS = {
     "rare": 0.03,
     "epic": 0.04,
     "legendary": 0.05,
+}
+
+# ── Season Pass ──
+SEASON_PASS_XP_EVENTS = {
+    "robbery": 10, "robbery_success": 20,
+    "pvp_win": 50, "pvp_attack": 15,
+    "casino_win": 20, "casino_play": 5,
+    "buy_business": 25, "case_open": 15,
+    "boss_attack": 30, "territory_capture": 40,
+    "shop_buy": 10, "gang_join": 20,
+}
+
+SEASON_PASS_CONFIG = {
+    "id": "season_1",
+    "name": "Сезон 1: Тёмный Путь",
+    "emoji": "🏴",
+    "xp_per_level": 100,
+    "max_level": 30,
+    "premium_stars": 500,
+    "premium_ton": 2.5,
+}
+
+SEASON_PASS_REWARDS = {
+    1:  {"free": {"type": "cash", "amount": 500},   "premium": {"type": "cash", "amount": 1500}},
+    2:  {"free": {"type": "cash", "amount": 800},   "premium": {"type": "cash", "amount": 2000}},
+    3:  {"free": {"type": "cash", "amount": 1000},  "premium": {"type": "cash", "amount": 3000}},
+    4:  {"free": {"type": "cash", "amount": 1500},  "premium": {"type": "cash", "amount": 4000}},
+    5:  {"free": {"type": "case", "case_id": "case_basic"}, "premium": {"type": "cash_and_case", "amount": 5000, "case_id": "case_premium"}},
+    6:  {"free": {"type": "cash", "amount": 2000},  "premium": {"type": "cash", "amount": 6000}},
+    7:  {"free": {"type": "cash", "amount": 2500},  "premium": {"type": "cash", "amount": 7000}},
+    8:  {"free": {"type": "cash", "amount": 3000},  "premium": {"type": "case", "case_id": "case_premium"}},
+    9:  {"free": {"type": "cash", "amount": 3500},  "premium": {"type": "cash", "amount": 9000}},
+    10: {"free": {"type": "case", "case_id": "case_basic"}, "premium": {"type": "cash_and_case", "amount": 10000, "case_id": "case_premium"}},
+    11: {"free": {"type": "cash", "amount": 4000},  "premium": {"type": "cash", "amount": 12000}},
+    12: {"free": {"type": "cash", "amount": 4500},  "premium": {"type": "cash", "amount": 14000}},
+    13: {"free": {"type": "cash", "amount": 5000},  "premium": {"type": "case", "case_id": "case_premium"}},
+    14: {"free": {"type": "cash", "amount": 5500},  "premium": {"type": "cash", "amount": 16000}},
+    15: {"free": {"type": "case", "case_id": "case_premium"}, "premium": {"type": "cash_and_case", "amount": 18000, "case_id": "case_legendary"}},
+    16: {"free": {"type": "cash", "amount": 6000},  "premium": {"type": "cash", "amount": 20000}},
+    17: {"free": {"type": "cash", "amount": 7000},  "premium": {"type": "cash", "amount": 22000}},
+    18: {"free": {"type": "cash", "amount": 8000},  "premium": {"type": "case", "case_id": "case_premium"}},
+    19: {"free": {"type": "cash", "amount": 9000},  "premium": {"type": "cash", "amount": 25000}},
+    20: {"free": {"type": "case", "case_id": "case_premium"}, "premium": {"type": "cash_and_case", "amount": 30000, "case_id": "case_legendary"}},
+    21: {"free": {"type": "cash", "amount": 10000}, "premium": {"type": "cash", "amount": 35000}},
+    22: {"free": {"type": "cash", "amount": 12000}, "premium": {"type": "cash", "amount": 40000}},
+    23: {"free": {"type": "cash", "amount": 14000}, "premium": {"type": "case", "case_id": "case_weapon"}},
+    24: {"free": {"type": "cash", "amount": 16000}, "premium": {"type": "cash", "amount": 45000}},
+    25: {"free": {"type": "case", "case_id": "case_premium"}, "premium": {"type": "cash_and_case", "amount": 50000, "case_id": "case_legendary"}},
+    26: {"free": {"type": "cash", "amount": 20000}, "premium": {"type": "cash", "amount": 60000}},
+    27: {"free": {"type": "cash", "amount": 25000}, "premium": {"type": "cash_and_case", "amount": 70000, "case_id": "case_legendary"}},
+    28: {"free": {"type": "cash", "amount": 30000}, "premium": {"type": "cash", "amount": 80000}},
+    29: {"free": {"type": "cash", "amount": 40000}, "premium": {"type": "cash", "amount": 100000}},
+    30: {"free": {"type": "cash_and_case", "amount": 50000, "case_id": "case_premium"}, "premium": {"type": "cash_and_case", "amount": 200000, "case_id": "case_legendary"}},
 }
 
 ALL_BUSINESSES = {b["id"]: {**b, "type": "legal"} for b in LEGAL_BUSINESSES}

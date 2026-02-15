@@ -8,7 +8,9 @@ import time
 import math
 import random
 import hashlib
+import hmac
 import uuid
+import urllib.parse
 import asyncio
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
@@ -39,6 +41,7 @@ from backend.game_config import (
     TALENT_TREE, ALL_TALENTS,
     WEEKLY_EVENTS, GANG_HEISTS, GANG_WAR_CONFIG,
     PVP_WEAPON_RARITY_BONUS, PVP_DEFENSE_RARITY_BONUS,
+    SEASON_PASS_XP_EVENTS, SEASON_PASS_CONFIG, SEASON_PASS_REWARDS,
 )
 from backend.game_logic import (
     calc_total_income, calc_offline_earnings, attempt_robbery,
@@ -46,7 +49,24 @@ from backend.game_logic import (
 )
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "se_admin_7f1d")
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
+
+
+def validate_init_data(init_data: str) -> dict | None:
+    """Validate Telegram WebApp initData HMAC signature."""
+    if not init_data:
+        return None
+    parsed = dict(p.split("=", 1) for p in init_data.split("&") if "=" in p)
+    check_hash = parsed.pop("hash", "")
+    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(computed_hash, check_hash):
+        return None
+    user_data = parsed.get("user", "")
+    if user_data:
+        return json.loads(urllib.parse.unquote(user_data))
+    return None
 
 
 @asynccontextmanager
@@ -55,7 +75,8 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Shadow Empire", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
@@ -66,7 +87,7 @@ async def root_redirect():
 
 @app.post("/api/admin/cash")
 async def admin_add_cash(req: dict):
-    if req.get("secret") != ADMIN_SECRET:
+    if not ADMIN_SECRET or req.get("secret") != ADMIN_SECRET:
         raise HTTPException(403, "Forbidden")
     tid = req.get("telegram_id")
     amount = req.get("amount", 0)
@@ -91,7 +112,7 @@ async def admin_add_cash(req: dict):
 
 @app.post("/api/admin/players")
 async def admin_list_players(req: dict):
-    if req.get("secret") != ADMIN_SECRET:
+    if not ADMIN_SECRET or req.get("secret") != ADMIN_SECRET:
         raise HTTPException(403, "Forbidden")
     db = await get_db()
     try:
@@ -104,7 +125,7 @@ async def admin_list_players(req: dict):
 
 @app.post("/api/admin/reset")
 async def admin_reset_player(req: dict):
-    if req.get("secret") != ADMIN_SECRET:
+    if not ADMIN_SECRET or req.get("secret") != ADMIN_SECRET:
         raise HTTPException(403, "Forbidden")
     tid = req.get("telegram_id")
     db = await get_db()
@@ -130,6 +151,7 @@ class PlayerInit(BaseModel):
     telegram_id: int
     username: str = ""
     referral_code: str = ""
+    init_data: str = ""
 
 class BuyRequest(BaseModel):
     telegram_id: int
@@ -273,6 +295,11 @@ class SkinEquipRequest(BaseModel):
 class EventClaimRequest(BaseModel):
     telegram_id: int
     milestone_index: int
+
+class SeasonClaimRequest(BaseModel):
+    telegram_id: int
+    level: int
+    track: str  # "free" or "premium"
 
 class BossAttackRequest(BaseModel):
     telegram_id: int
@@ -711,6 +738,34 @@ async def get_event_progress(db, tid, event_id):
     row = await cursor.fetchone()
     return dict(row) if row else {"progress": 0, "rewards_claimed": ""}
 
+# ── Season Pass ──
+
+def calc_season_level(xp):
+    return min(xp // SEASON_PASS_CONFIG["xp_per_level"] + 1, SEASON_PASS_CONFIG["max_level"])
+
+async def get_season_pass(db, tid):
+    season_id = SEASON_PASS_CONFIG["id"]
+    cursor = await db.execute(
+        "SELECT * FROM player_season_pass WHERE telegram_id=? AND season_id=?",
+        (tid, season_id),
+    )
+    row = await cursor.fetchone()
+    if row:
+        return dict(row)
+    return {"telegram_id": tid, "season_id": season_id, "xp": 0, "is_premium": 0, "free_claimed": "", "premium_claimed": "", "purchased_at": 0}
+
+async def advance_season_pass(db, tid, action_type, amount=1):
+    xp = SEASON_PASS_XP_EVENTS.get(action_type, 0) * amount
+    if xp <= 0:
+        return
+    season_id = SEASON_PASS_CONFIG["id"]
+    await db.execute(
+        "INSERT INTO player_season_pass (telegram_id, season_id, xp) VALUES (?,?,?) "
+        "ON CONFLICT(telegram_id) DO UPDATE SET xp=xp+?",
+        (tid, season_id, xp, xp),
+    )
+    await db.commit()
+
 def get_active_weekly_event():
     """Get the active weekly event based on current day of week (Mon=0, Sun=6)."""
     dow = datetime.now(timezone.utc).weekday()
@@ -809,12 +864,18 @@ async def track_action(db, tid, action_type, amount=1):
     await advance_tournament(db, tid, action_type, amount)
     await advance_event(db, tid, action_type, amount)
     await advance_quest(db, tid, action_type, amount)
+    await advance_season_pass(db, tid, action_type, amount)
 
 
 # ── Player Init ──
 
 @app.post("/api/init")
 async def player_init(req: PlayerInit):
+    # Validate Telegram initData
+    if req.init_data:
+        user = validate_init_data(req.init_data)
+        if not user or user.get("id") != req.telegram_id:
+            raise HTTPException(403, "Invalid initData")
     db = await get_db()
     try:
         player = await get_player(db, req.telegram_id)
@@ -1034,6 +1095,10 @@ async def player_init(req: PlayerInit):
             "gang_heists_config": GANG_HEISTS,
             # Gang war config
             "gang_war_config": GANG_WAR_CONFIG,
+            # Season Pass
+            "season_pass": await get_season_pass(db, req.telegram_id),
+            "season_pass_config": SEASON_PASS_CONFIG,
+            "season_pass_rewards": SEASON_PASS_REWARDS,
         }
     finally:
         await db.close()
@@ -1968,7 +2033,9 @@ async def get_gang(gang_id: int):
 
 @app.post("/api/pvp/attack")
 async def pvp_attack(req: PvpAttackRequest):
-    async with get_player_lock(req.telegram_id):
+    lock1_id, lock2_id = sorted([req.telegram_id, req.target_id])
+    async with get_player_lock(lock1_id):
+      async with get_player_lock(lock2_id):
         db = await get_db()
         try:
             attacker = await get_player(db, req.telegram_id)
@@ -2566,6 +2633,9 @@ async def create_stars_invoice(req: StarsInvoiceRequest):
     # Add skin case as purchasable
     if req.package_id == "skin_case":
         all_packages["skin_case"] = {"stars": SKIN_CASE["stars_price"], "label": SKIN_CASE["name"]}
+    # Add season pass premium
+    if req.package_id == "season_1_premium":
+        all_packages["season_1_premium"] = {"stars": SEASON_PASS_CONFIG["premium_stars"], "label": "Премиум Пас 🏴"}
     pkg = all_packages.get(req.package_id)
     if not pkg:
         raise HTTPException(400, "Unknown package")
@@ -2720,6 +2790,7 @@ def roll_skin(vip_boost=False):
 
 @app.post("/api/skin/open")
 async def open_skin_case(req: SkinCaseOpenRequest):
+  async with get_player_lock(req.telegram_id):
     db = await get_db()
     try:
         player = await get_player(db, req.telegram_id)
@@ -2784,6 +2855,7 @@ async def open_skin_case(req: SkinCaseOpenRequest):
 
 @app.post("/api/skin/equip")
 async def equip_skin(req: SkinEquipRequest):
+  async with get_player_lock(req.telegram_id):
     db = await get_db()
     try:
         player = await get_player(db, req.telegram_id)
@@ -2825,7 +2897,7 @@ async def skins_config():
 @app.post("/api/ton/create")
 async def ton_create_payment(req: TonCreateRequest):
     """Create a TON payment request — returns wallet address, amount, and comment."""
-    all_packages = {**VIP_PACKAGES, **CASH_PACKAGES, **CASE_PACKAGES}
+    all_packages = {**VIP_PACKAGES, **CASH_PACKAGES, **CASE_PACKAGES, "season_1_premium": {"label": "Season Pass Premium"}}
     pkg = all_packages.get(req.package_id)
     if not pkg:
         raise HTTPException(400, "Unknown package")
@@ -2877,6 +2949,11 @@ async def ton_verify_payment(req: TonVerifyRequest):
                     body = msg.get("message", "")
                     value = int(msg.get("value", "0"))
                     if req.comment and req.comment in body and value > 0:
+                        # Verify amount matches expected price
+                        ton_price = TON_PRICES.get(req.package_id, {}).get("ton", 999)
+                        expected_nano = int(float(ton_price) * 1e9)
+                        if value < int(expected_nano * 0.95):  # 5% tolerance
+                            continue
                         verified = True
                         break
 
@@ -2884,13 +2961,21 @@ async def ton_verify_payment(req: TonVerifyRequest):
             return {"status": "pending", "message": "Транзакция ещё не найдена. Подожди 1-2 минуты и нажми проверить снова."}
 
         # Activate purchase
-        all_packages = {**VIP_PACKAGES, **CASH_PACKAGES, **CASE_PACKAGES}
+        all_packages = {**VIP_PACKAGES, **CASH_PACKAGES, **CASE_PACKAGES, "season_1_premium": {"label": "Season Pass Premium"}}
         pkg = all_packages.get(req.package_id)
         if not pkg:
             raise HTTPException(400, "Unknown package")
 
         now = time.time()
-        if req.package_id in VIP_PACKAGES:
+        if req.package_id == "season_1_premium":
+            season_id = SEASON_PASS_CONFIG["id"]
+            await db.execute(
+                "INSERT INTO player_season_pass (telegram_id, season_id, is_premium, purchased_at) VALUES (?,?,1,?) "
+                "ON CONFLICT(telegram_id) DO UPDATE SET is_premium=1, purchased_at=?",
+                (req.telegram_id, season_id, now, now),
+            )
+
+        elif req.package_id in VIP_PACKAGES:
             days = pkg["days"]
             cursor2 = await db.execute("SELECT vip_until FROM players WHERE telegram_id=?", (req.telegram_id,))
             row = await cursor2.fetchone()
@@ -2999,6 +3084,65 @@ async def claim_event_milestone(req: EventClaimRequest):
         player = await get_player(db, req.telegram_id)
         event_progress = await get_event_progress(db, req.telegram_id, ev["id"])
         return {"player": player, "event_progress": event_progress}
+    finally:
+        await db.close()
+
+
+# ── Season Pass Claim ──
+
+@app.post("/api/season/claim")
+async def claim_season_reward(req: SeasonClaimRequest):
+  async with get_player_lock(req.telegram_id):
+    db = await get_db()
+    try:
+        sp = await get_season_pass(db, req.telegram_id)
+        level = calc_season_level(sp["xp"])
+
+        if req.level < 1 or req.level > SEASON_PASS_CONFIG["max_level"]:
+            raise HTTPException(400, "Invalid level")
+        if req.level > level:
+            raise HTTPException(400, "Level not reached yet")
+        if req.track not in ("free", "premium"):
+            raise HTTPException(400, "Invalid track")
+        if req.track == "premium" and not sp["is_premium"]:
+            raise HTTPException(400, "Premium pass required")
+
+        reward_entry = SEASON_PASS_REWARDS.get(req.level)
+        if not reward_entry:
+            raise HTTPException(400, "No reward for this level")
+
+        claimed_field = "free_claimed" if req.track == "free" else "premium_claimed"
+        claimed_str = sp.get(claimed_field, "")
+        claimed_set = set(claimed_str.split(",")) if claimed_str else set()
+        level_key = str(req.level)
+
+        if level_key in claimed_set:
+            raise HTTPException(400, "Already claimed")
+
+        reward = reward_entry[req.track]
+        # Give reward
+        if reward["type"] == "cash":
+            await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (reward["amount"], req.telegram_id))
+        elif reward["type"] == "case":
+            await db.execute("INSERT INTO player_cases (telegram_id, case_id) VALUES (?,?)", (req.telegram_id, reward["case_id"]))
+        elif reward["type"] == "cash_and_case":
+            await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (reward["amount"], req.telegram_id))
+            await db.execute("INSERT INTO player_cases (telegram_id, case_id) VALUES (?,?)", (req.telegram_id, reward["case_id"]))
+
+        claimed_set.add(level_key)
+        new_claimed = ",".join(sorted(claimed_set, key=lambda x: int(x)))
+        season_id = SEASON_PASS_CONFIG["id"]
+        await db.execute(
+            f"INSERT INTO player_season_pass (telegram_id, season_id, {claimed_field}) VALUES (?,?,?) "
+            f"ON CONFLICT(telegram_id) DO UPDATE SET {claimed_field}=?",
+            (req.telegram_id, season_id, new_claimed, new_claimed),
+        )
+        await db.commit()
+
+        player = await get_player(db, req.telegram_id)
+        season_pass = await get_season_pass(db, req.telegram_id)
+        player_cases = await get_player_cases(db, req.telegram_id)
+        return {"player": player, "season_pass": season_pass, "player_cases": player_cases}
     finally:
         await db.close()
 

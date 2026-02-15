@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Shadow Empire</title>
-    <link rel="stylesheet" href="css/style.css?v=21">
+    <link rel="stylesheet" href="css/style.css?v=23">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
@@ -263,6 +263,7 @@
                     <button class="sub-tab active" onclick="switchDelaSubTab('robberies',this)">🔫 Ограбления</button>
                     <button class="sub-tab" onclick="switchDelaSubTab('missions',this)">📋 Миссии</button>
                     <button class="sub-tab" onclick="switchDelaSubTab('quests',this)">📜 Квесты</button>
+                    <button class="sub-tab" onclick="switchDelaSubTab('season-pass',this)">🏴 Пас</button>
                 </div>
                 <div id="dela-robberies">
                     <div class="tab-header"><h2>🔫 Тёмные дела</h2><p>Быстрые деньги, высокий риск</p></div>
@@ -275,6 +276,9 @@
                 <div id="dela-quests" class="hidden">
                     <div class="tab-header"><h2>📜 Квестовые линии</h2><p>Проходи сюжет — получай награды</p></div>
                     <div id="quests-list" class="quests-list"></div>
+                </div>
+                <div id="dela-season-pass" class="hidden">
+                    <div id="season-pass-content"></div>
                 </div>
             </div>
 
@@ -423,6 +427,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=21"></script>
+    <script src="js/app.js?v=23"></script>
 </body>
 </html>

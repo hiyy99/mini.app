@@ -8,6 +8,8 @@ DB_PATH = os.path.join(_data_dir, "game.db")
 async def get_db():
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
+    await db.execute("PRAGMA journal_mode=WAL")
+    await db.execute("PRAGMA foreign_keys=ON")
     return db
 
 
@@ -334,6 +336,16 @@ async def init_db():
         ended_at REAL DEFAULT 0,
         winner_gang_id INTEGER DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS player_season_pass (
+        telegram_id INTEGER PRIMARY KEY,
+        season_id TEXT NOT NULL,
+        xp INTEGER DEFAULT 0,
+        is_premium INTEGER DEFAULT 0,
+        free_claimed TEXT DEFAULT '',
+        premium_claimed TEXT DEFAULT '',
+        purchased_at REAL DEFAULT 0
+    );
     """)
 
     # ── Migrations (safe ALTER TABLE) ──
@@ -403,6 +415,40 @@ async def init_db():
                 "INSERT INTO territories (name, emoji, bonus_percent) VALUES (?, ?, ?)",
                 (name, emoji, bonus),
             )
+
+    # ── Performance indexes ──
+    index_statements = [
+        "CREATE INDEX IF NOT EXISTS idx_pb_tid ON player_businesses(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pi_tid ON player_inventory(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pc_tid ON player_cases(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ml_seller ON market_listings(seller_id)",
+        "CREATE INDEX IF NOT EXISTS idx_gm_gang ON gang_members(gang_id)",
+        "CREATE INDEX IF NOT EXISTS idx_gu_gang ON gang_upgrades(gang_id)",
+        "CREATE INDEX IF NOT EXISTS idx_gl_gang ON gang_log(gang_id)",
+        "CREATE INDEX IF NOT EXISTS idx_dm_tid_day ON daily_missions(telegram_id, day)",
+        "CREATE INDEX IF NOT EXISTS idx_pu_tid ON player_upgrades(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_rl_tid ON robbery_log(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cl_tid ON casino_log(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pvp_att ON pvp_log(attacker_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pvp_def ON pvp_log(defender_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ts_day ON tournament_scores(day)",
+        "CREATE INDEX IF NOT EXISTS idx_pa_tid ON player_achievements(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_bal_gang ON boss_attack_log(gang_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pq_tid ON player_quests(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pep_tid ON player_event_progress(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ps_tid ON player_skins(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pt_tid ON player_talents(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_gh_gang ON gang_heists(gang_id)",
+        "CREATE INDEX IF NOT EXISTS idx_gw_att ON gang_wars(attacker_gang_id)",
+        "CREATE INDEX IF NOT EXISTS idx_gw_def ON gang_wars(defender_gang_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ref_referrer ON referrals(referrer_id)",
+        "CREATE INDEX IF NOT EXISTS idx_terr_owner ON territories(owner_gang_id)",
+    ]
+    for stmt in index_statements:
+        try:
+            await db.execute(stmt)
+        except Exception:
+            pass
 
     await db.commit()
     await db.close()
