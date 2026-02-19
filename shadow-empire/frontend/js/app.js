@@ -39,38 +39,15 @@ let S = {
     gangHeistsCfg: {}, gangWarCfg: {},
 };
 
-// ── Suppress Adsgram native popups (MUST be before Adsgram.init) ──
-let _suppressAdPopup = false;
-if (tg) {
-    ['showPopup', 'showAlert', 'showConfirm'].forEach(method => {
-        if (tg[method]) {
-            const _orig = tg[method].bind(tg);
-            tg[method] = function() {
-                if (_suppressAdPopup) { const cb = arguments[arguments.length-1]; if (typeof cb === 'function') cb(); return; }
-                return _orig.apply(tg, arguments);
-            };
-        }
-    });
-    // Also patch on the prototype/WebApp object in case SDK reads from there
-    const wa = window.Telegram?.WebApp;
-    if (wa && wa !== tg) {
-        ['showPopup', 'showAlert', 'showConfirm'].forEach(method => {
-            if (wa[method]) {
-                const _orig = wa[method].bind(wa);
-                wa[method] = function() {
-                    if (_suppressAdPopup) { const cb = arguments[arguments.length-1]; if (typeof cb === 'function') cb(); return; }
-                    return _orig.apply(wa, arguments);
-                };
-            }
-        });
-    }
-}
-
 // ── Adsgram SDK ──
 let AdController = null;
 try {
     if (window.Adsgram) {
         AdController = window.Adsgram.init({ blockId: "22956" });
+        // Subscribe to error events to suppress default native alerts
+        AdController.addEventListener('onBannerNotFound', () => {});
+        AdController.addEventListener('onNonStopShow', () => {});
+        AdController.addEventListener('onTooLongSession', () => {});
     }
 } catch(e) { console.log('Adsgram not available'); }
 
@@ -2113,14 +2090,11 @@ async function watchAd(rewardType) {
         return;
     }
     try {
-        _suppressAdPopup = true;
         await AdController.show();
-        setTimeout(() => { _suppressAdPopup = false; }, 2000);
         claimAdReward(rewardType);
     } catch(e) {
         console.log('Ad not completed', e);
         showPopup('📺', 'Реклама', '', 'Реклама сейчас недоступна, попробуй позже', '');
-        setTimeout(() => { _suppressAdPopup = false; }, 2000);
     }
 }
 
