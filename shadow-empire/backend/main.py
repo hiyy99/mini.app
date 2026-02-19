@@ -875,6 +875,7 @@ async def player_init(req: PlayerInit):
     if req.init_data:
         user = validate_init_data(req.init_data)
         if not user or user.get("id") != req.telegram_id:
+            logger.error(f"initData validation failed: user={user}, req.telegram_id={req.telegram_id}")
             raise HTTPException(403, "Invalid initData")
     db = await get_db()
     try:
