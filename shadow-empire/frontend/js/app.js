@@ -39,35 +39,40 @@ let S = {
     gangHeistsCfg: {}, gangWarCfg: {},
 };
 
+// ── Suppress Adsgram native popups (MUST be before Adsgram.init) ──
+let _suppressAdPopup = false;
+if (tg) {
+    ['showPopup', 'showAlert', 'showConfirm'].forEach(method => {
+        if (tg[method]) {
+            const _orig = tg[method].bind(tg);
+            tg[method] = function() {
+                if (_suppressAdPopup) { const cb = arguments[arguments.length-1]; if (typeof cb === 'function') cb(); return; }
+                return _orig.apply(tg, arguments);
+            };
+        }
+    });
+    // Also patch on the prototype/WebApp object in case SDK reads from there
+    const wa = window.Telegram?.WebApp;
+    if (wa && wa !== tg) {
+        ['showPopup', 'showAlert', 'showConfirm'].forEach(method => {
+            if (wa[method]) {
+                const _orig = wa[method].bind(wa);
+                wa[method] = function() {
+                    if (_suppressAdPopup) { const cb = arguments[arguments.length-1]; if (typeof cb === 'function') cb(); return; }
+                    return _orig.apply(wa, arguments);
+                };
+            }
+        });
+    }
+}
+
 // ── Adsgram SDK ──
 let AdController = null;
-let _suppressAdPopup = false;
 try {
     if (window.Adsgram) {
         AdController = window.Adsgram.init({ blockId: "22956" });
     }
 } catch(e) { console.log('Adsgram not available'); }
-// Intercept Telegram native popups to suppress Adsgram error notifications
-if (tg) {
-    if (tg.showPopup) {
-        const _origShowPopup = tg.showPopup.bind(tg);
-        tg.showPopup = function(params, cb) {
-            if (_suppressAdPopup) { if (cb) cb(); return; }
-            return _origShowPopup(params, cb);
-        };
-    }
-    if (tg.showAlert) {
-        const _origShowAlert = tg.showAlert.bind(tg);
-        tg.showAlert = function(msg, cb) {
-            if (_suppressAdPopup) { if (cb) cb(); return; }
-            return _origShowAlert(msg, cb);
-        };
-    }
-    if (tg.showConfirm) {
-        const _origShowConfirm = tg.showConfirm.bind(tg);
-        tg.showConfirm = function(msg, cb) {
-            if (_suppressAdPopup) { if (cb) cb(false); return; }
-            return _origShowConfirm(msg, cb);
         };
     }
 }
@@ -2113,12 +2118,12 @@ async function watchAd(rewardType) {
     try {
         _suppressAdPopup = true;
         await AdController.show();
-        _suppressAdPopup = false;
+        setTimeout(() => { _suppressAdPopup = false; }, 2000);
         claimAdReward(rewardType);
     } catch(e) {
-        _suppressAdPopup = false;
         console.log('Ad not completed', e);
         showPopup('📺', 'Реклама', '', 'Реклама сейчас недоступна, попробуй позже', '');
+        setTimeout(() => { _suppressAdPopup = false; }, 2000);
     }
 }
 
