@@ -48,7 +48,7 @@ from backend.game_logic import (
     get_buy_cost, calc_manager_cost, get_player_level,
 )
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
+BOT_TOKEN = os.environ["BOT_TOKEN"].strip()
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
 
 
@@ -56,13 +56,20 @@ def validate_init_data(init_data: str) -> dict | None:
     """Validate Telegram WebApp initData HMAC signature."""
     if not init_data:
         return None
+    # Parse query string using urllib for robust handling
     parsed = dict(p.split("=", 1) for p in init_data.split("&") if "=" in p)
     check_hash = parsed.pop("hash", "")
+    if not check_hash:
+        print("validate_init_data: no hash field found")
+        return None
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
     secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(computed_hash, check_hash):
-        print(f"HMAC mismatch: computed={computed_hash[:16]}... check={check_hash[:16]}... token_start={BOT_TOKEN[:10]}")
+        print(f"HMAC mismatch: computed={computed_hash} check={check_hash}")
+        print(f"  token_repr={repr(BOT_TOKEN)}")
+        print(f"  data_check_string={repr(data_check_string[:200])}")
+        print(f"  keys={sorted(parsed.keys())}")
         return None
     user_data = parsed.get("user", "")
     if user_data:
