@@ -2086,12 +2086,14 @@ async function watchAd(rewardType) {
         return;
     }
     try {
+        // Load ad first to check availability without triggering native popup
+        await AdController.load();
         await AdController.show();
         // Ad watched successfully — claim reward
         claimAdReward(rewardType);
     } catch(e) {
-        // User closed ad or ad failed — Adsgram SDK shows its own notification
         console.log('Ad not completed', e);
+        showPopup('📺', 'Реклама', '', 'Реклама сейчас недоступна, попробуй позже', '');
     }
 }
 
