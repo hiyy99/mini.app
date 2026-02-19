@@ -41,11 +41,20 @@ let S = {
 
 // ── Adsgram SDK ──
 let AdController = null;
+let _suppressAdPopup = false;
 try {
     if (window.Adsgram) {
         AdController = window.Adsgram.init({ blockId: "22956" });
     }
 } catch(e) { console.log('Adsgram not available'); }
+// Intercept Telegram native popup to suppress Adsgram error notifications
+if (tg && tg.showPopup) {
+    const _origShowPopup = tg.showPopup.bind(tg);
+    tg.showPopup = function(params, cb) {
+        if (_suppressAdPopup) { if (cb) cb(); return; }
+        return _origShowPopup(params, cb);
+    };
+}
 
 // ── TON Connect ──
 let tonConnectUI = null;
@@ -2086,12 +2095,12 @@ async function watchAd(rewardType) {
         return;
     }
     try {
-        // Load ad first to check availability without triggering native popup
-        await AdController.load();
+        _suppressAdPopup = true;
         await AdController.show();
-        // Ad watched successfully — claim reward
+        _suppressAdPopup = false;
         claimAdReward(rewardType);
     } catch(e) {
+        _suppressAdPopup = false;
         console.log('Ad not completed', e);
         showPopup('📺', 'Реклама', '', 'Реклама сейчас недоступна, попробуй позже', '');
     }
