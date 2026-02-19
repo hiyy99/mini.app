@@ -47,10 +47,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="🕴️ Играть в Shadow Empire",
             web_app=WebAppInfo(url=url),
         )],
-        [InlineKeyboardButton(
-            text="💬 Обратная связь",
-            url="https://t.me/shadowempire_official",
-        )]
+        [
+            InlineKeyboardButton(text="📢 Новости", url="https://t.me/shadowempire_official"),
+            InlineKeyboardButton(text="💬 Обратная связь", url="https://t.me/shadowempire_chat"),
+        ]
     ])
 
     await update.message.reply_text(
