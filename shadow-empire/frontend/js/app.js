@@ -1581,7 +1581,7 @@ async function loadGangs() {
         if (!r.gangs.length) { el.innerHTML = '<p style="color:var(--text2);font-size:.8rem">Банд пока нет</p>'; return; }
         for (const g of r.gangs) {
             el.innerHTML += `<div class="gang-card">
-                <div><strong>[${escapeHtml(g.tag)}] ${escapeHtml(g.name)}</strong><br><small>${g.members || 1} чел. | ⚡${g.power}</small></div>
+                <div><strong>[${escapeHtml(g.tag)}] ${escapeHtml(g.name)}</strong> <span style="color:var(--text2);font-size:.75rem">#${g.id}</span><br><small>${g.members || 1} чел. | ⚡${g.power}</small></div>
                 <button class="btn-buy" onclick="joinGang(${g.id})">Вступить</button></div>`;
         }
     } catch(e) {}
@@ -2695,13 +2695,25 @@ async function loadGangWars() {
         const wars = r.wars || [];
         let html = '';
 
-        // Declare war button
+        // Declare war button with gang selector
         html += `<div style="margin-bottom:12px">
             <div style="display:flex;gap:8px;align-items:center">
-                <input class="gang-input" id="war-target-gang" type="number" placeholder="ID вражеской банды" style="flex:1;margin:0">
+                <select class="gang-input" id="war-target-gang" style="flex:1;margin:0;padding:8px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px">
+                    <option value="">Выбери банду...</option>
+                </select>
                 <button class="btn btn-primary" onclick="declareWar()" style="white-space:nowrap">⚔️ Объявить ($${fmt(S.gangWarCfg.declare_cost || 50000)})</button>
             </div>
         </div>`;
+        // Load gangs for selector
+        fetch(API + '/api/gangs').then(r => r.json()).then(data => {
+            const sel = document.getElementById('war-target-gang');
+            if (sel && data.gangs) {
+                for (const g of data.gangs) {
+                    if (g.id === S.player.gang_id) continue;
+                    sel.innerHTML += `<option value="${g.id}">[${g.tag}] ${g.name} (⚡${g.power})</option>`;
+                }
+            }
+        }).catch(() => {});
 
         if (wars.length === 0) {
             html += '<p style="text-align:center;color:var(--text2)">Нет войн</p>';
