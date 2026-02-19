@@ -3568,18 +3568,6 @@ async def increment_war_score(db, gang_id: int, score_type: str):
     await db.commit()
 
 
-@app.post("/api/admin/force-end-war/{war_id}")
-async def admin_force_end_war(war_id: int):
-    db = await get_db()
-    try:
-        await db.execute("UPDATE gang_wars SET started_at=0 WHERE id=? AND status='active'", (war_id,))
-        await db.commit()
-        await check_and_finalize_wars(db)
-        return {"ok": True}
-    finally:
-        await db.close()
-
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
