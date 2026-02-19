@@ -73,9 +73,6 @@ try {
         AdController = window.Adsgram.init({ blockId: "22956" });
     }
 } catch(e) { console.log('Adsgram not available'); }
-        };
-    }
-}
 
 // ── TON Connect ──
 let tonConnectUI = null;
