@@ -2749,15 +2749,24 @@ async function loadGangWars() {
                 const theirScore = isAttacker ? w.defender_score : w.attacker_score;
                 const enemyName = isAttacker ? `[${escapeHtml(w.defender_tag)}] ${escapeHtml(w.defender_name)}` : `[${escapeHtml(w.attacker_tag)}] ${escapeHtml(w.attacker_name)}`;
                 const statusText = w.status === 'active' ? '🔴 Идёт' : (w.winner_gang_id === S.player.gang_id ? '🏆 Победа' : (w.winner_gang_id === 0 ? '🤝 Ничья' : '😞 Поражение'));
+                const timeLeft = w.status === 'active' ? Math.max(0, (w.started_at + (S.gangWarCfg.duration || 86400)) - Date.now()/1000) : 0;
+                const hoursLeft = Math.floor(timeLeft / 3600);
+                const minsLeft = Math.floor((timeLeft % 3600) / 60);
                 html += `<div class="gang-upgrade-card" style="flex-direction:column;align-items:stretch;margin-bottom:8px">
                     <div style="display:flex;justify-content:space-between;margin-bottom:4px">
                         <span style="font-weight:700">vs ${enemyName}</span>
                         <span>${statusText}</span>
                     </div>
-                    <div style="display:flex;justify-content:space-around;font-size:.9rem">
+                    <div style="display:flex;justify-content:space-around;font-size:.9rem;margin-bottom:6px">
                         <span style="color:var(--green)">Мы: ${yourScore}</span>
                         <span style="color:var(--red)">Они: ${theirScore}</span>
                     </div>
+                    ${w.status === 'active' ? `<div style="text-align:center;font-size:.75rem;color:var(--text2);margin-bottom:6px">⏰ Осталось: ${hoursLeft}ч ${minsLeft}м</div>
+                    <div style="font-size:.75rem;color:var(--gold);text-align:center;margin-bottom:8px">⚡ PvP победа = +${S.gangWarCfg.score_per_pvp_win || 10} очков | 🏴 Захват территории = +${S.gangWarCfg.score_per_territory_capture || 25} очков</div>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" onclick="switchGangSubTab('gang-pvp')" style="flex:1">⚔️ PvP</button>
+                        <button class="btn btn-primary" onclick="switchGangSubTab('gang-territories')" style="flex:1">🏴 Территории</button>
+                    </div>` : ''}
                 </div>`;
             }
         }
