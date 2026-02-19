@@ -47,13 +47,29 @@ try {
         AdController = window.Adsgram.init({ blockId: "22956" });
     }
 } catch(e) { console.log('Adsgram not available'); }
-// Intercept Telegram native popup to suppress Adsgram error notifications
-if (tg && tg.showPopup) {
-    const _origShowPopup = tg.showPopup.bind(tg);
-    tg.showPopup = function(params, cb) {
-        if (_suppressAdPopup) { if (cb) cb(); return; }
-        return _origShowPopup(params, cb);
-    };
+// Intercept Telegram native popups to suppress Adsgram error notifications
+if (tg) {
+    if (tg.showPopup) {
+        const _origShowPopup = tg.showPopup.bind(tg);
+        tg.showPopup = function(params, cb) {
+            if (_suppressAdPopup) { if (cb) cb(); return; }
+            return _origShowPopup(params, cb);
+        };
+    }
+    if (tg.showAlert) {
+        const _origShowAlert = tg.showAlert.bind(tg);
+        tg.showAlert = function(msg, cb) {
+            if (_suppressAdPopup) { if (cb) cb(); return; }
+            return _origShowAlert(msg, cb);
+        };
+    }
+    if (tg.showConfirm) {
+        const _origShowConfirm = tg.showConfirm.bind(tg);
+        tg.showConfirm = function(msg, cb) {
+            if (_suppressAdPopup) { if (cb) cb(false); return; }
+            return _origShowConfirm(msg, cb);
+        };
+    }
 }
 
 // ── TON Connect ──
