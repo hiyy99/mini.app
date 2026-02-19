@@ -44,10 +44,10 @@ let AdController = null;
 try {
     if (window.Adsgram) {
         AdController = window.Adsgram.init({ blockId: "22956" });
-        // Subscribe to error events to suppress default native alerts
-        AdController.addEventListener('onBannerNotFound', () => {});
-        AdController.addEventListener('onNonStopShow', () => {});
-        AdController.addEventListener('onTooLongSession', () => {});
+        // Subscribe to ALL error events to suppress default native alerts (per Adsgram docs)
+        ['onBannerNotFound', 'onNonStopShow', 'onTooLongSession', 'onError', 'onSkip'].forEach(evt => {
+            AdController.addEventListener(evt, () => {});
+        });
     }
 } catch(e) { console.log('Adsgram not available'); }
 
