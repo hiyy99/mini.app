@@ -56,20 +56,15 @@ def validate_init_data(init_data: str) -> dict | None:
     """Validate Telegram WebApp initData HMAC signature."""
     if not init_data:
         return None
-    # Parse query string using urllib for robust handling
     parsed = dict(p.split("=", 1) for p in init_data.split("&") if "=" in p)
     check_hash = parsed.pop("hash", "")
+    parsed.pop("signature", None)  # Telegram Bot API 8.0+ adds signature separately
     if not check_hash:
-        print("validate_init_data: no hash field found")
         return None
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
     secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(computed_hash, check_hash):
-        print(f"HMAC mismatch: computed={computed_hash} check={check_hash}")
-        print(f"  token_repr={repr(BOT_TOKEN)}")
-        print(f"  data_check_string={repr(data_check_string[:200])}")
-        print(f"  keys={sorted(parsed.keys())}")
         return None
     user_data = parsed.get("user", "")
     if user_data:
@@ -882,9 +877,8 @@ async def player_init(req: PlayerInit):
     # Validate Telegram initData
     if req.init_data:
         user = validate_init_data(req.init_data)
-        if not user:
-            print(f"initData HMAC failed, skipping strict check for telegram_id={req.telegram_id}")
-            # TODO: fix HMAC validation — token may have been regenerated
+        if not user or user.get("id") != req.telegram_id:
+            raise HTTPException(403, "Invalid initData")
     db = await get_db()
     try:
         player = await get_player(db, req.telegram_id)
