@@ -2621,41 +2621,26 @@ function renderWeeklyEventBanner() {
 }
 
 // ── Gang Heists ──
-function renderHeists() {
+async function renderHeists() {
     const el = $('#heists-section');
     if (!el) return;
     if (!S.player || !S.player.gang_id) {
         el.innerHTML = '<p style="text-align:center;color:var(--text2)">Вступи в банду для участия в налётах</p>';
         return;
     }
-    let html = '<div class="heists-list">';
-    for (const [hid, cfg] of Object.entries(S.gangHeistsCfg)) {
-        html += `<div class="gang-upgrade-card" style="flex-direction:column;align-items:stretch">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-                <span style="font-size:1.5rem">${cfg.emoji}</span>
-                <div>
-                    <div style="font-weight:700">${cfg.name}</div>
-                    <div style="font-size:.78rem;color:var(--text2)">${cfg.description}</div>
-                    <div style="font-size:.75rem;color:var(--gold)">Мин. участников: ${cfg.min_members} | Награда: $${fmt(cfg.min_reward)}-$${fmt(cfg.max_reward)}</div>
-                </div>
-            </div>
-            <button class="btn btn-primary" onclick="startHeist('${hid}')" style="width:100%">🏴 Начать налёт</button>
-        </div>`;
-    }
-    html += '</div>';
-    html += '<div id="active-heist" style="margin-top:12px"></div>';
-    el.innerHTML = html;
-    loadActiveHeist();
-}
-
-async function loadActiveHeist() {
-    const el = document.getElementById('active-heist');
-    if (!el || !S.player?.gang_id) return;
+    // Load active heists first
+    let activeHeists = [];
     try {
         const r = await fetch(API + '/api/gang/heists/' + S.player.gang_id).then(r => r.json());
-        if (!r.heists || !r.heists.length) { el.innerHTML = ''; return; }
-        let html = '<div style="font-weight:700;margin-bottom:8px">🔴 Активные налёты</div>';
-        for (const h of r.heists) {
+        activeHeists = r.heists || [];
+    } catch(e) {}
+    const activeTypes = new Set(activeHeists.map(h => h.heist_type));
+
+    let html = '';
+    // Show active heists at the TOP
+    if (activeHeists.length) {
+        html += '<div style="font-weight:700;margin-bottom:8px">🔴 Активные налёты</div>';
+        for (const h of activeHeists) {
             const cfg = S.gangHeistsCfg[h.heist_type] || {};
             const participants = h.participants ? h.participants.split(',') : [];
             const alreadyJoined = participants.includes(String(S.player.telegram_id));
@@ -2672,8 +2657,25 @@ async function loadActiveHeist() {
                 </div>
             </div>`;
         }
-        el.innerHTML = html;
-    } catch(e) { el.innerHTML = ''; }
+    }
+    // Show available heists to start (hide ones that already have active)
+    html += '<div class="heists-list" style="margin-top:12px">';
+    for (const [hid, cfg] of Object.entries(S.gangHeistsCfg)) {
+        const isActive = activeTypes.has(hid);
+        html += `<div class="gang-upgrade-card" style="flex-direction:column;align-items:stretch;${isActive ? 'opacity:0.5' : ''}">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                <span style="font-size:1.5rem">${cfg.emoji}</span>
+                <div>
+                    <div style="font-weight:700">${cfg.name}</div>
+                    <div style="font-size:.78rem;color:var(--text2)">${cfg.description}</div>
+                    <div style="font-size:.75rem;color:var(--gold)">Мин. участников: ${cfg.min_members} | Награда: $${fmt(cfg.min_reward)}-$${fmt(cfg.max_reward)}</div>
+                </div>
+            </div>
+            ${isActive ? '<div style="text-align:center;color:var(--gold);font-size:.85rem">⏳ Налёт уже идёт — присоединяйся выше</div>' : `<button class="btn btn-primary" onclick="startHeist('${hid}')" style="width:100%">🏴 Начать налёт</button>`}
+        </div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
 }
 
 async function startHeist(heistType) {
@@ -2681,6 +2683,7 @@ async function startHeist(heistType) {
     try {
         const r = await api('/api/gang/heist/start', { telegram_id: S.player.telegram_id, heist_type: heistType });
         showPopup('🏴', 'Налёт начат!', r.config.name, 'Ожидание участников...', '');
+        renderHeists();
     } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
 
@@ -2689,6 +2692,7 @@ async function joinHeist(heistId) {
     try {
         const r = await api('/api/gang/heist/join', { telegram_id: S.player.telegram_id, heist_id: heistId });
         showPopup('✅', 'Присоединился!', '', `Участников: ${r.participant_count}`, '');
+        renderHeists();
     } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
 
@@ -2699,6 +2703,7 @@ async function executeHeist(heistId) {
         showPopup('💰', 'Налёт успешен!', `Участников: ${r.participants}`, `+$${fmt(r.share)} твоя доля`, `Общая добыча: $${fmt(r.total_reward)}`);
         S.displayCash += r.share;
         updateHUD();
+        renderHeists();
     } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
 

@@ -38,7 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     url = WEBAPP_URL
     sep = "&" if "?" in url else "?"
-    url += f"{sep}_v=33"
+    url += f"{sep}_v=34"
     if ref_param:
         url += f"&ref={ref_param}"
 
