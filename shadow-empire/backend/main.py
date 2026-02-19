@@ -12,7 +12,9 @@ import hmac
 import uuid
 import urllib.parse
 import asyncio
+import base64
 from datetime import datetime, timezone, timedelta
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -52,27 +54,31 @@ BOT_TOKEN = os.environ["BOT_TOKEN"].strip()
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
 
 
+TELEGRAM_PUBLIC_KEY = Ed25519PublicKey.from_public_bytes(
+    bytes.fromhex("e7bf03a2fa4602af4580703d88dda5bb59f32ed8b02a56c187fe7d34caed242d")
+)
+
 def validate_init_data(init_data: str) -> dict | None:
-    """Validate Telegram WebApp initData HMAC signature."""
+    """Validate Telegram WebApp initData using Ed25519 signature (Bot API 8.0+)."""
     if not init_data:
         return None
-    parsed = dict(p.split("=", 1) for p in init_data.split("&") if "=" in p)
-    check_hash = parsed.pop("hash", "")
-    parsed.pop("signature", None)  # Telegram Bot API 8.0+ adds signature separately
-    if not check_hash:
+    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+    signature = parsed.pop("signature", "")
+    parsed.pop("hash", "")
+    if not signature:
         return None
-    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
-    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
-    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(computed_hash, check_hash):
-        print(f"HMAC FAIL computed={computed_hash} expected={check_hash}")
-        print(f"  data_check_string={repr(data_check_string)}")
-        print(f"  keys_used={sorted(parsed.keys())}")
-        print(f"  raw_init_data={repr(init_data)}")
+    bot_id = BOT_TOKEN.split(":")[0]
+    data_check_string = bot_id + ":WebAppData\n" + "\n".join(
+        f"{k}={v}" for k, v in sorted(parsed.items())
+    )
+    try:
+        sig_bytes = base64.urlsafe_b64decode(signature + "==")
+        TELEGRAM_PUBLIC_KEY.verify(sig_bytes, data_check_string.encode("utf-8"))
+    except Exception:
         return None
     user_data = parsed.get("user", "")
     if user_data:
-        return json.loads(urllib.parse.unquote(user_data))
+        return json.loads(user_data)
     return None
 
 
@@ -881,11 +887,7 @@ async def player_init(req: PlayerInit):
     # Validate Telegram initData
     if req.init_data:
         user = validate_init_data(req.init_data)
-        if not user:
-            print(f"initData: HMAC failed for tid={req.telegram_id}")
-            raise HTTPException(403, "Invalid initData")
-        if user.get("id") != req.telegram_id:
-            print(f"initData: ID mismatch user_id={user.get('id')} ({type(user.get('id'))}) req_tid={req.telegram_id} ({type(req.telegram_id)})")
+        if not user or user.get("id") != req.telegram_id:
             raise HTTPException(403, "Invalid initData")
     db = await get_db()
     try:
