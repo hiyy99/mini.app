@@ -829,10 +829,44 @@ function renderShop() {
     }
 }
 
+// ── My Cases (from rewards/pass/purchases) ──
+function renderMyCases() {
+    const el = $('#my-cases-section');
+    if (!el) return;
+    if (!S.playerCases || !S.playerCases.length) { el.innerHTML = ''; return; }
+    // Group by case_id
+    const grouped = {};
+    for (const pc of S.playerCases) {
+        if (!grouped[pc.case_id]) grouped[pc.case_id] = [];
+        grouped[pc.case_id].push(pc);
+    }
+    let html = '<div class="tab-header"><h2>🎁 Мои кейсы</h2><p>Нажми чтобы открыть</p></div>';
+    html += '<div class="cases-grid">';
+    for (const [caseId, pcs] of Object.entries(grouped)) {
+        const cfg = S.casesCfg[caseId] || {};
+        const r = cfg.rarity || 'common';
+        html += `<div class="case-card" style="border-color:${rarityColor(r)}">
+            <div class="case-card-top">
+                <div class="case-emoji">${cfg.emoji || '📦'}</div>
+                <div class="case-info">
+                    <div class="case-name" style="color:${rarityColor(r)}">${cfg.name || caseId}</div>
+                    <div class="case-desc">Количество: ${pcs.length}</div>
+                </div>
+            </div>
+            <button class="btn-case-buy" style="background:${rarityColor(r)}" onclick="openCaseAnim(${pcs[0].id},'${caseId}')">
+                🎰 Открыть
+            </button>
+        </div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+}
+
 // ── Cases ──
 function renderCases() {
     const el = $('#cases-list');
     if (!el) return;
+    renderMyCases();
     el.innerHTML = '';
     for (const [id, cfg] of Object.entries(S.casesCfg)) {
         const r = cfg.rarity || 'common';
