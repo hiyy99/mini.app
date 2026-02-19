@@ -1013,3 +1013,118 @@ SKIN_CASE_VIP = {
     "stars_price": 0,
     "ton_price": 0,
 }
+
+# ── Bribes (Взятки) ──
+BRIBE_CONFIG = {
+    "min_suspicion": 20,       # Can bribe when suspicion >= 20%
+    "cost_per_point": 500,     # Base cost per suspicion point removed
+    "cost_exponent": 1.8,      # Exponential scaling: higher suspicion = much more expensive
+    "reduction": 25,           # Reduces suspicion by 25 points
+    "cooldown": 300,           # 5 min cooldown between bribes
+    "vip_discount": 0.5,      # VIP pays 50% less
+}
+
+# ── Ranks (Ранги) ──
+RANKS = [
+    {"id": "thug",      "name": "Шестёрка",       "emoji": "🐣", "min_score": 0},
+    {"id": "bro",       "name": "Браток",         "emoji": "🔪", "min_score": 100},
+    {"id": "fighter",   "name": "Боец",           "emoji": "🥊", "min_score": 500},
+    {"id": "authority", "name": "Авторитет",      "emoji": "🎩", "min_score": 2000},
+    {"id": "boss",      "name": "Босс",           "emoji": "👑", "min_score": 8000},
+    {"id": "godfather", "name": "Крёстный отец",  "emoji": "💀", "min_score": 25000},
+    {"id": "shadow",    "name": "Тень",           "emoji": "🏴", "min_score": 100000},
+]
+
+def calc_rank_score(player, player_level):
+    """Calculate rank score from player stats."""
+    return (
+        player_level * 10
+        + player.get("prestige_level", 0) * 500
+        + player.get("pvp_wins", 0) * 5
+        + player.get("total_earned", 0) / 10000
+        + player.get("bosses_killed", 0) * 50
+    )
+
+def get_rank(score):
+    """Get rank dict for a given score."""
+    result = RANKS[0]
+    for r in RANKS:
+        if score >= r["min_score"]:
+            result = r
+    return result
+
+# ── Bounties (Контракты) ──
+BOUNTY_CONFIG = {
+    "min_reward": 10000,
+    "max_reward": 5000000,
+    "max_active_per_player": 3,    # Max bounties a player can post
+    "duration": 86400,             # 24 hours
+    "platform_fee": 0.10,         # 10% fee burned (money sink)
+}
+
+# ── Item Sets (Коллекции) ──
+ITEM_SETS = {
+    "street_starter": {
+        "name": "Уличный набор",
+        "emoji": "🔰",
+        "description": "Базовая экипировка для начинающего",
+        "items": ["hat_cap", "jacket_hoodie", "acc_chain", "weapon_knife"],
+        "bonus_type": "income",
+        "bonus_value": 5,  # +5% income
+    },
+    "night_raider": {
+        "name": "Ночной рейдер",
+        "emoji": "🌙",
+        "description": "Тёмная экипировка для ночных дел",
+        "items": ["hat_bandana", "jacket_leather", "acc_glasses", "weapon_pistol"],
+        "bonus_type": "fear",
+        "bonus_value": 5,  # +5 fear
+    },
+    "gentleman": {
+        "name": "Джентльмен",
+        "emoji": "🎩",
+        "description": "Стиль и класс — лучшая маскировка",
+        "items": ["hat_fedora", "jacket_suit", "acc_watch", "car_bmw"],
+        "bonus_type": "respect",
+        "bonus_value": 8,  # +8 respect
+    },
+    "golden_empire": {
+        "name": "Золотая Империя",
+        "emoji": "✨",
+        "description": "Вершина роскоши и власти",
+        "items": ["hat_crown", "jacket_gold", "acc_rings", "car_lambo", "weapon_ak"],
+        "bonus_type": "income",
+        "bonus_value": 15,  # +15% income
+    },
+    "demon_lord": {
+        "name": "Повелитель Тьмы",
+        "emoji": "😈",
+        "description": "Самый опасный сет в игре",
+        "items": ["hat_demon", "jacket_dragon", "acc_diamond", "car_tank", "weapon_gold_deagle"],
+        "bonus_type": "fear",
+        "bonus_value": 20,  # +20 fear
+    },
+    "neon_cyber": {
+        "name": "Кибер-панк",
+        "emoji": "💜",
+        "description": "Неоновый стиль будущего",
+        "items": ["hat_neon", "jacket_neon", "acc_skull", "car_ferrari"],
+        "bonus_type": "income",
+        "bonus_value": 12,  # +12% income
+    },
+    "military": {
+        "name": "Военная мощь",
+        "emoji": "🎖",
+        "description": "Полная боевая экипировка",
+        "items": ["hat_military", "jacket_military", "weapon_shotgun", "car_mercedes"],
+        "bonus_type": "fear",
+        "bonus_value": 10,  # +10 fear
+    },
+}
+
+# ── Trade-Up ──
+TRADE_UP_CONFIG = {
+    "items_required": 3,  # 3 items of same rarity → 1 of next
+    "rarity_order": ["common", "uncommon", "rare", "epic", "legendary"],
+}
+

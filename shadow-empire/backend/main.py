@@ -44,6 +44,8 @@ from backend.game_config import (
     WEEKLY_EVENTS, GANG_WAR_CONFIG,
     PVP_WEAPON_RARITY_BONUS, PVP_DEFENSE_RARITY_BONUS,
     SEASON_PASS_XP_EVENTS, SEASON_PASS_CONFIG, SEASON_PASS_REWARDS,
+    BRIBE_CONFIG, RANKS, calc_rank_score, get_rank,
+    BOUNTY_CONFIG, ITEM_SETS, TRADE_UP_CONFIG,
 )
 from backend.game_logic import (
     calc_total_income, calc_offline_earnings, attempt_robbery,
@@ -942,11 +944,27 @@ async def player_init(req: PlayerInit):
         event_mult = get_event_income_multiplier()
         talents = await get_player_talents(db, req.telegram_id)
         tb = get_talent_bonuses(talents)
+
+        # Item set bonuses
+        set_income_bonus = 0
+        set_fear_bonus = 0
+        set_respect_bonus = 0
+        completed_sets = _calc_completed_sets(inventory)
+        for set_id, status in completed_sets.items():
+            if status["complete"]:
+                cfg = ITEM_SETS[set_id]
+                if cfg["bonus_type"] == "income":
+                    set_income_bonus += cfg["bonus_value"]
+                elif cfg["bonus_type"] == "fear":
+                    set_fear_bonus += cfg["bonus_value"]
+                elif cfg["bonus_type"] == "respect":
+                    set_respect_bonus += cfg["bonus_value"]
+
         income_per_sec, suspicion_per_sec = calc_total_income(
-            owned, player["reputation_fear"], player["reputation_respect"],
+            owned, player["reputation_fear"] + set_fear_bonus, player["reputation_respect"] + set_respect_bonus,
             player.get("prestige_multiplier", 1.0), territory_bonus,
             vip_multiplier=vip_mult, ad_boost=ad_boost,
-            equip_income_bonus=equip_inc, upgrade_income_bonus=upgrade_inc,
+            equip_income_bonus=equip_inc + set_income_bonus, upgrade_income_bonus=upgrade_inc,
             gang_income_bonus=gang_inc, event_income_multiplier=event_mult,
             talent_income_bonus=tb["passive_income"], talent_suspicion_reduce=tb["shadow_talent"],
         )
@@ -1068,9 +1086,46 @@ async def player_init(req: PlayerInit):
             "season_pass": await get_season_pass(db, req.telegram_id),
             "season_pass_config": SEASON_PASS_CONFIG,
             "season_pass_rewards": SEASON_PASS_REWARDS,
+            # Ranks
+            "rank": get_rank(calc_rank_score(player, get_player_level(owned))),
+            "rank_score": round(calc_rank_score(player, get_player_level(owned))),
+            "ranks_config": RANKS,
+            # Bounties
+            "bounties_on_me": await _get_bounties_on(db, req.telegram_id),
+            "bribe_config": BRIBE_CONFIG,
+            "bounty_config": BOUNTY_CONFIG,
+            # Item Sets
+            "item_sets": ITEM_SETS,
+            "completed_sets": _calc_completed_sets(inventory),
+            # Trade-Up
+            "trade_up_config": TRADE_UP_CONFIG,
         }
     finally:
         await db.close()
+
+
+async def _get_bounties_on(db, tid):
+    """Get active bounties targeting this player."""
+    cursor = await db.execute(
+        "SELECT b.id, b.reward, b.poster_id, p.username as poster_name "
+        "FROM bounties b JOIN players p ON p.telegram_id=b.poster_id "
+        "WHERE b.target_id=? AND b.status='active'", (tid,)
+    )
+    return [dict(r) for r in await cursor.fetchall()]
+
+
+def _calc_completed_sets(inventory):
+    """Calculate which item sets the player has completed."""
+    owned_ids = {i["item_id"] for i in inventory}
+    completed = {}
+    for set_id, cfg in ITEM_SETS.items():
+        owned_count = sum(1 for item in cfg["items"] if item in owned_ids)
+        completed[set_id] = {
+            "total": len(cfg["items"]),
+            "owned": owned_count,
+            "complete": owned_count == len(cfg["items"]),
+        }
+    return completed
 
 
 # ── Business ──
@@ -2052,11 +2107,29 @@ async def pvp_attack(req: PvpAttackRequest):
             await db.commit()
 
             await track_action(db, req.telegram_id, "pvp_attack")
+            bounty_claimed = 0
             if win:
                 await track_action(db, req.telegram_id, "pvp_win")
                 # Increment gang war score for PvP win
                 if attacker.get("gang_id"):
                     await increment_war_score(db, attacker["gang_id"], "pvp_win")
+
+                # Check & claim bounties on the target
+                cursor = await db.execute(
+                    "SELECT * FROM bounties WHERE target_id=? AND status='active'",
+                    (req.target_id,),
+                )
+                active_bounties = [dict(r) for r in await cursor.fetchall()]
+                for b in active_bounties:
+                    await db.execute(
+                        "UPDATE bounties SET status='claimed', claimed_by=?, completed_at=? WHERE id=?",
+                        (req.telegram_id, time.time(), b["id"]),
+                    )
+                    await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (b["reward"], req.telegram_id))
+                    bounty_claimed += b["reward"]
+                    await notify_player(db, b["poster_id"], f"🎯 Контракт выполнен! {attacker.get('username', 'Аноним')} устранил цель.")
+                if bounty_claimed:
+                    await db.commit()
 
             # Notify defender
             await notify_player(db, req.target_id, f"⚔️ На тебя напал {'и победил' if win else 'но проиграл'} игрок {attacker.get('username', 'Аноним')}! {'Украдено' if win else 'Ты отбился и украл'}: ${int(steal):,}")
@@ -2069,8 +2142,260 @@ async def pvp_attack(req: PvpAttackRequest):
                 "your_power": a_power,
                 "their_power": d_power,
                 "player": attacker,
+                "bounty_claimed": bounty_claimed,
             }
 
+        finally:
+            await db.close()
+
+
+# ── Bribes (Взятки) ──
+
+class BribeRequest(BaseModel):
+    telegram_id: int
+
+@app.post("/api/bribe")
+async def pay_bribe(req: BribeRequest):
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+
+            susp = player["suspicion"]
+            if susp < BRIBE_CONFIG["min_suspicion"]:
+                raise HTTPException(400, f"Подозрение слишком низкое (нужно >= {BRIBE_CONFIG['min_suspicion']}%)")
+
+            now = time.time()
+            if player.get("bribe_cooldown_ts", 0) > now:
+                remaining = int(player["bribe_cooldown_ts"] - now)
+                raise HTTPException(400, f"Подожди {remaining} сек")
+
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
+
+            # Cost scales exponentially with suspicion
+            reduction = min(BRIBE_CONFIG["reduction"], susp)
+            cost = BRIBE_CONFIG["cost_per_point"] * (susp ** BRIBE_CONFIG["cost_exponent"]) / 10
+            cost = round(cost)
+
+            vip = is_vip_active(player)
+            if vip:
+                cost = round(cost * BRIBE_CONFIG["vip_discount"])
+
+            if player["cash"] < cost:
+                raise HTTPException(400, f"Нужно ${int(cost):,}")
+
+            new_susp = max(0, susp - reduction)
+            await db.execute(
+                "UPDATE players SET cash=cash-?, suspicion=?, bribe_cooldown_ts=? WHERE telegram_id=?",
+                (cost, new_susp, now + BRIBE_CONFIG["cooldown"], req.telegram_id),
+            )
+            await db.commit()
+
+            player = await get_player(db, req.telegram_id)
+            return {
+                "player": player,
+                "cost": cost,
+                "reduction": reduction,
+                "new_suspicion": new_susp,
+            }
+        finally:
+            await db.close()
+
+
+# ── Bounties (Контракты) ──
+
+class BountyCreateRequest(BaseModel):
+    telegram_id: int
+    target_id: int
+    reward: float
+
+@app.post("/api/bounty/create")
+async def create_bounty(req: BountyCreateRequest):
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            if req.telegram_id == req.target_id:
+                raise HTTPException(400, "Нельзя на себя")
+
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+
+            target = await get_player(db, req.target_id)
+            if not target: raise HTTPException(404, "Цель не найдена")
+
+            reward = round(req.reward)
+            if reward < BOUNTY_CONFIG["min_reward"]:
+                raise HTTPException(400, f"Мин. награда ${BOUNTY_CONFIG['min_reward']:,}")
+            if reward > BOUNTY_CONFIG["max_reward"]:
+                raise HTTPException(400, f"Макс. награда ${BOUNTY_CONFIG['max_reward']:,}")
+
+            # Check max active bounties
+            cursor = await db.execute(
+                "SELECT COUNT(*) as cnt FROM bounties WHERE poster_id=? AND status='active'",
+                (req.telegram_id,),
+            )
+            cnt = (await cursor.fetchone())["cnt"]
+            if cnt >= BOUNTY_CONFIG["max_active_per_player"]:
+                raise HTTPException(400, f"Макс. {BOUNTY_CONFIG['max_active_per_player']} активных контракта")
+
+            # Check no duplicate bounty on same target
+            cursor = await db.execute(
+                "SELECT id FROM bounties WHERE poster_id=? AND target_id=? AND status='active'",
+                (req.telegram_id, req.target_id),
+            )
+            if await cursor.fetchone():
+                raise HTTPException(400, "Контракт на эту цель уже есть")
+
+            owned = await get_owned_businesses(db, req.telegram_id)
+            player, _ = await sync_earnings(db, player, owned)
+
+            # Total cost = reward + platform fee
+            fee = round(reward * BOUNTY_CONFIG["platform_fee"])
+            total_cost = reward + fee
+            if player["cash"] < total_cost:
+                raise HTTPException(400, f"Нужно ${int(total_cost):,} (награда + комиссия 10%)")
+
+            await db.execute(
+                "UPDATE players SET cash=cash-? WHERE telegram_id=?",
+                (total_cost, req.telegram_id),
+            )
+            await db.execute(
+                "INSERT INTO bounties (poster_id, target_id, reward) VALUES (?,?,?)",
+                (req.telegram_id, req.target_id, reward),
+            )
+            await db.commit()
+
+            # Notify target
+            await notify_player(db, req.target_id, f"🎯 На тебя выставлен контракт! Награда: ${int(reward):,}")
+
+            player = await get_player(db, req.telegram_id)
+            return {"player": player, "cost": total_cost, "fee": fee}
+        finally:
+            await db.close()
+
+
+@app.get("/api/bounties")
+async def list_bounties():
+    db = await get_db()
+    try:
+        now = time.time()
+        # Expire old bounties (refund poster)
+        cursor = await db.execute(
+            "SELECT * FROM bounties WHERE status='active' AND created_at + ? < ?",
+            (BOUNTY_CONFIG["duration"], now),
+        )
+        expired = [dict(r) for r in await cursor.fetchall()]
+        for b in expired:
+            await db.execute("UPDATE bounties SET status='expired' WHERE id=?", (b["id"],))
+            await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (b["reward"], b["poster_id"]))
+        if expired:
+            await db.commit()
+
+        cursor = await db.execute(
+            "SELECT b.*, p1.username as poster_name, p2.username as target_name "
+            "FROM bounties b "
+            "JOIN players p1 ON p1.telegram_id=b.poster_id "
+            "JOIN players p2 ON p2.telegram_id=b.target_id "
+            "WHERE b.status='active' ORDER BY b.reward DESC LIMIT 50"
+        )
+        bounties = [dict(r) for r in await cursor.fetchall()]
+        return {"bounties": bounties}
+    finally:
+        await db.close()
+
+
+# ── Trade-Up (Обмен предметов) ──
+
+class TradeUpRequest(BaseModel):
+    telegram_id: int
+    item_ids: list
+
+@app.post("/api/trade-up")
+async def trade_up(req: TradeUpRequest):
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            player = await get_player(db, req.telegram_id)
+            if not player: raise HTTPException(404, "Player not found")
+
+            if len(req.item_ids) != TRADE_UP_CONFIG["items_required"]:
+                raise HTTPException(400, f"Нужно {TRADE_UP_CONFIG['items_required']} предмета")
+
+            # Check all items exist in inventory and not equipped
+            inventory = await get_inventory(db, req.telegram_id)
+            inv_map = {i["item_id"]: i for i in inventory}
+            rarities_found = set()
+            for item_id in req.item_ids:
+                inv_item = inv_map.get(item_id)
+                if not inv_item:
+                    raise HTTPException(400, f"Предмет {item_id} не найден в инвентаре")
+                if inv_item.get("equipped"):
+                    raise HTTPException(400, "Нельзя обменять надетый предмет")
+                cfg = SHOP_ITEMS.get(item_id)
+                if not cfg:
+                    raise HTTPException(400, f"Неизвестный предмет {item_id}")
+                rarities_found.add(cfg.get("rarity", "common"))
+
+            if len(rarities_found) != 1:
+                raise HTTPException(400, "Все предметы должны быть одной редкости")
+
+            rarity = rarities_found.pop()
+            order = TRADE_UP_CONFIG["rarity_order"]
+            if rarity not in order:
+                raise HTTPException(400, "Невозможно обменять")
+            idx = order.index(rarity)
+            if idx >= len(order) - 1:
+                raise HTTPException(400, "Уже максимальная редкость")
+
+            next_rarity = order[idx + 1]
+
+            # Find possible items of next rarity (exclude VIP-only)
+            candidates = [
+                item_id for item_id, cfg in SHOP_ITEMS.items()
+                if cfg.get("rarity") == next_rarity and not cfg.get("vip_only")
+            ]
+            if not candidates:
+                raise HTTPException(400, "Нет предметов следующей редкости")
+
+            won_item_id = random.choice(candidates)
+
+            # Remove old items
+            for item_id in req.item_ids:
+                await db.execute(
+                    "DELETE FROM player_inventory WHERE telegram_id=? AND item_id=?",
+                    (req.telegram_id, item_id),
+                )
+
+            # Add new item (or compensate if already owned)
+            existing = inv_map.get(won_item_id)
+            cash_compensation = 0
+            if existing:
+                won_cfg = SHOP_ITEMS.get(won_item_id, {})
+                rarity_mult = {"common": 1, "uncommon": 2, "rare": 4, "epic": 8, "legendary": 20}
+                cash_compensation = 5000 * rarity_mult.get(next_rarity, 1)
+                await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (cash_compensation, req.telegram_id))
+            else:
+                await db.execute(
+                    "INSERT OR IGNORE INTO player_inventory (telegram_id, item_id) VALUES (?,?)",
+                    (req.telegram_id, won_item_id),
+                )
+
+            await db.commit()
+
+            inventory = await get_inventory(db, req.telegram_id)
+            player = await get_player(db, req.telegram_id)
+            return {
+                "player": player,
+                "inventory": inventory,
+                "won_item_id": won_item_id,
+                "won_item": SHOP_ITEMS.get(won_item_id),
+                "cash_compensation": cash_compensation,
+                "completed_sets": _calc_completed_sets(inventory),
+                "source_rarity": rarity,
+                "result_rarity": next_rarity,
+            }
         finally:
             await db.close()
 

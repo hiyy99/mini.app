@@ -34,6 +34,10 @@ let S = {
     weeklyEvent: null,
     // Gang wars
     gangWarCfg: {},
+    // New: Ranks, Bribes, Bounties, Sets, TradeUp
+    rank: null, rankScore: 0, ranksCfg: [],
+    bountiesOnMe: [], bribeConfig: {}, bountyConfig: {},
+    itemSets: {}, completedSets: {}, tradeUpConfig: {},
 };
 
 // ── Adsgram SDK ──
@@ -138,6 +142,16 @@ async function init() {
         S.seasonPass = r.season_pass || {};
         S.seasonPassCfg = r.season_pass_config || {};
         S.seasonPassRewards = r.season_pass_rewards || {};
+        // New features: Ranks, Bribes, Bounties, Sets, TradeUp
+        S.rank = r.rank || null;
+        S.rankScore = r.rank_score || 0;
+        S.ranksCfg = r.ranks_config || [];
+        S.bountiesOnMe = r.bounties_on_me || [];
+        S.bribeConfig = r.bribe_config || {};
+        S.bountyConfig = r.bounty_config || {};
+        S.itemSets = r.item_sets || {};
+        S.completedSets = r.completed_sets || {};
+        S.tradeUpConfig = r.trade_up_config || {};
 
         renderAll(); hideLoading(); startLoop();
 
@@ -226,6 +240,7 @@ function renderAll() {
     renderLeaderboard(); renderVipShop(); updateAdButtons(); updateVipBadges();
     renderTournament(); renderEventBanner(); renderBoss();
     renderWeeklyEventBanner();
+    renderBribeButton(); renderRank(); renderBounties(); renderSets(); renderTradeUp();
 }
 
 function updateHUD() {
@@ -239,6 +254,12 @@ function updateHUD() {
     $('#rep-fear').textContent = S.player.reputation_fear;
     $('#rep-respect').textContent = S.player.reputation_respect;
     $('#player-level').textContent = S.playerLevel;
+
+    // Rank badge
+    if (S.rank) {
+        const re = $('#rank-emoji'); if (re) re.textContent = S.rank.emoji;
+        const rn = $('#rank-name'); if (rn) rn.textContent = S.rank.name;
+    }
 
     // VIP badge in top bar
     const vipBadge = $('#vip-badge');
@@ -2707,6 +2728,189 @@ async function toggleNotifications() {
         const r = await api('/api/notifications/toggle', { telegram_id: S.player.telegram_id });
         S.player.notifications_enabled = r.notifications_enabled;
         renderCharacter();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+// ── Bribe Button ──
+function renderBribeButton() {
+    const btn = $('#bribe-btn');
+    if (!btn || !S.player || !S.bribeConfig) return;
+    const susp = S.player.suspicion || 0;
+    const minSusp = S.bribeConfig.min_suspicion || 20;
+    if (susp >= minSusp) {
+        const cost = Math.floor(S.bribeConfig.cost_per_point * Math.pow(susp / 100, S.bribeConfig.cost_exponent || 1.8) * S.bribeConfig.reduction);
+        const vipDiscount = S.vipStatus.active ? (S.bribeConfig.vip_discount || 0.5) : 1;
+        const finalCost = Math.floor(cost * vipDiscount);
+        btn.textContent = `💰 Взятка -${S.bribeConfig.reduction}% ($${fmt(finalCost)})`;
+        btn.classList.remove('hidden');
+    } else {
+        btn.classList.add('hidden');
+    }
+}
+
+async function payBribe() {
+    try {
+        const r = await api('/api/bribe', { telegram_id: S.player.telegram_id });
+        S.player = r.player; S.displayCash = r.player.cash;
+        showPopup('💰', 'Взятка дана!', '', `-$${fmt(r.cost)}`, `Подозрение: ${Math.floor(r.new_suspicion)}%`);
+        renderAll();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+// ── Ranks ──
+function renderRank() {
+    // Rank is rendered in updateHUD, this is for detailed view if needed
+}
+
+// ── Bounties ──
+function renderBounties() {
+    const el = $('#bounties-section');
+    if (!el) return;
+    let html = '';
+
+    // Bounties on me
+    if (S.bountiesOnMe && S.bountiesOnMe.length) {
+        html += '<div class="bounties-on-me" style="margin-bottom:12px">';
+        html += '<div style="font-size:.85rem;font-weight:700;color:var(--red);margin-bottom:6px">🎯 Контракты на тебя:</div>';
+        for (const b of S.bountiesOnMe) {
+            html += `<div class="bounty-card bounty-on-me">
+                <span class="bounty-reward">$${fmt(b.reward)}</span>
+                <span class="bounty-poster">от ${escapeHtml(b.poster_name) || 'Аноним'}</span>
+            </div>`;
+        }
+        html += '</div>';
+    }
+
+    // Create bounty
+    html += `<div class="bounty-create" style="margin-bottom:12px">
+        <div style="font-size:.85rem;font-weight:700;margin-bottom:6px">🎯 Заказать контракт</div>
+        <div style="display:flex;gap:6px;align-items:center">
+            <input class="gang-input" id="bounty-target-id" type="number" placeholder="ID игрока" style="flex:1;margin:0;padding:8px">
+            <input class="gang-input" id="bounty-reward" type="number" placeholder="Награда $" style="flex:1;margin:0;padding:8px">
+            <button class="btn-buy" onclick="createBounty()" style="white-space:nowrap">🎯 Заказать</button>
+        </div>
+        <div style="font-size:.65rem;color:var(--text2);margin-top:4px">Комиссия ${(S.bountyConfig.platform_fee || 0.1) * 100}% (сгорает). Мин: $${fmt(S.bountyConfig.min_reward || 10000)}</div>
+    </div>`;
+
+    el.innerHTML = html;
+}
+
+async function createBounty() {
+    const targetId = parseInt($('#bounty-target-id')?.value);
+    const reward = parseFloat($('#bounty-reward')?.value);
+    if (!targetId || !reward) { showPopup('❌', 'Ошибка', '', 'Введи ID цели и награду', ''); return; }
+    try {
+        const r = await api('/api/bounty/create', { telegram_id: S.player.telegram_id, target_id: targetId, reward });
+        S.player = r.player; S.displayCash = r.player.cash;
+        showPopup('🎯', 'Контракт создан!', '', `Награда: $${fmt(reward)}`, `Списано: $${fmt(r.total_cost)}`);
+        renderAll();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
+}
+
+// ── Item Sets ──
+function renderSets() {
+    const el = $('#sets-list');
+    if (!el || !S.itemSets) return;
+    if (!Object.keys(S.itemSets).length) { el.innerHTML = ''; return; }
+
+    let html = '';
+    for (const [setId, set] of Object.entries(S.itemSets)) {
+        const completed = S.completedSets?.[setId];
+        const ownedItems = S.inventory.map(i => i.item_id);
+        const setItems = set.items || [];
+        const owned = setItems.filter(i => ownedItems.includes(i)).length;
+        const total = setItems.length;
+        const pct = Math.floor(owned / total * 100);
+
+        const bonusText = set.bonus_type === 'income' ? `💰 +${set.bonus_value}% доход`
+            : set.bonus_type === 'fear' ? `😈 +${set.bonus_value} страх`
+            : `🤝 +${set.bonus_value} уважение`;
+
+        html += `<div class="set-card ${completed ? 'set-complete' : ''}">
+            <div class="set-header">
+                <span class="set-name">${set.name}</span>
+                <span class="set-bonus">${bonusText}</span>
+            </div>
+            <div class="set-progress-bar">
+                <div class="set-progress-fill" style="width:${pct}%"></div>
+            </div>
+            <div class="set-items">`;
+        for (const itemId of setItems) {
+            const item = S.shopItems[itemId];
+            const has = ownedItems.includes(itemId);
+            if (item) {
+                html += `<span class="set-item ${has ? 'set-item-owned' : 'set-item-missing'}" title="${item.name}">${item.emoji}</span>`;
+            }
+        }
+        html += `</div>
+            <div class="set-count">${owned}/${total} ${completed ? '✅ Активен' : ''}</div>
+        </div>`;
+    }
+    el.innerHTML = html;
+}
+
+// ── Trade-Up ──
+function renderTradeUp() {
+    const el = $('#tradeup-content');
+    if (!el) return;
+    const cfg = S.tradeUpConfig;
+    if (!cfg || !cfg.rarity_order) { el.innerHTML = ''; return; }
+
+    // Group unequipped items by rarity
+    const byRarity = {};
+    for (const inv of S.inventory) {
+        if (inv.equipped) continue;
+        const item = S.shopItems[inv.item_id];
+        if (!item) continue;
+        const r = item.rarity || 'common';
+        if (!byRarity[r]) byRarity[r] = [];
+        byRarity[r].push(inv);
+    }
+
+    const order = cfg.rarity_order || ['common','uncommon','rare','epic','legendary'];
+    const needed = cfg.items_required || 3;
+    let html = '';
+    for (let i = 0; i < order.length - 1; i++) {
+        const r = order[i];
+        const nextR = order[i + 1];
+        const items = byRarity[r] || [];
+        const canTrade = items.length >= needed;
+        html += `<div class="tradeup-row">
+            <div class="tradeup-label">
+                <span style="color:${rarityColor(r)}">${rarityName(r)}</span>
+                <span style="color:var(--text2)">→</span>
+                <span style="color:${rarityColor(nextR)}">${rarityName(nextR)}</span>
+            </div>
+            <div class="tradeup-info">${items.length}/${needed} предметов</div>
+            <button class="btn-buy" onclick="doTradeUp('${r}')" ${canTrade ? '' : 'disabled'}>🔄 Обменять</button>
+        </div>`;
+    }
+    el.innerHTML = html;
+}
+
+async function doTradeUp(rarity) {
+    // Collect 3 unequipped items of this rarity
+    const items = [];
+    for (const inv of S.inventory) {
+        if (inv.equipped) continue;
+        const item = S.shopItems[inv.item_id];
+        if (!item) continue;
+        if ((item.rarity || 'common') === rarity) items.push(inv.item_id);
+        if (items.length >= 3) break;
+    }
+    if (items.length < 3) { showPopup('❌', 'Ошибка', '', 'Недостаточно предметов', ''); return; }
+    try {
+        const r = await api('/api/trade-up', { telegram_id: S.player.telegram_id, item_ids: items });
+        S.player = r.player; S.inventory = r.inventory; S.displayCash = r.player.cash;
+        if (r.won_item) {
+            const rr = r.won_item.rarity || 'common';
+            showPopup('🔄', 'Trade-Up!', 'Ты получил:', `${r.won_item.emoji} ${r.won_item.name}`, rarityName(rr));
+        } else {
+            showPopup('💵', 'Компенсация', 'Все предметы уже есть', `+$${fmt(r.cash_compensation || 0)}`, '');
+        }
+        // Update sets
+        S.completedSets = r.completed_sets || S.completedSets;
+        renderAll();
     } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
 

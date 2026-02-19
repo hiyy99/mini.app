@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Shadow Empire</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <link rel="stylesheet" href="css/style.css?v=40">
+    <link rel="stylesheet" href="css/style.css?v=41">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
     <!-- TON Connect removed — Stars-only payments -->
@@ -112,10 +112,12 @@
             <div class="suspicion-track">
                 <div id="suspicion-fill" class="suspicion-fill"></div>
             </div>
+            <button id="bribe-btn" class="bribe-btn hidden" onclick="payBribe()">💰 Дать взятку</button>
         </div>
 
         <!-- Reputation -->
         <div class="reputation-bar">
+            <div class="rep-item rep-rank"><span id="rank-emoji">🐣</span><span id="rank-name">Шестёрка</span></div>
             <div class="rep-item rep-fear"><span>😈 Страх</span><span id="rep-fear">0</span></div>
             <div class="rep-item rep-respect"><span>🤝 Уважение</span><span id="rep-respect">0</span></div>
             <div class="rep-item rep-level"><span>⭐ Уровень</span><span id="player-level">0</span></div>
@@ -348,10 +350,21 @@
                         <div class="talent-points-badge" id="talent-points-badge"></div>
                         <div id="talent-tree-content"></div>
                     </div>
+                    <!-- Item Sets -->
+                    <div class="sets-section" id="sets-section">
+                        <h3>🧩 Коллекции</h3>
+                        <div id="sets-list"></div>
+                    </div>
                     <!-- Inventory -->
                     <div class="inv-section">
                         <h3>🎒 Инвентарь</h3>
                         <div id="inv-list" class="inv-list"></div>
+                    </div>
+                    <!-- Trade-Up -->
+                    <div class="tradeup-section" id="tradeup-section">
+                        <h3>🔄 Обмен (Trade-Up)</h3>
+                        <p style="font-size:.72rem;color:var(--text2);margin-bottom:8px">Обменяй 3 предмета одной редкости на 1 предмет выше</p>
+                        <div id="tradeup-content"></div>
                     </div>
                 </div>
                 <div id="char-achievements" class="hidden">
@@ -383,6 +396,7 @@
                 </div>
                 <div id="gang-pvp" class="hidden">
                     <div class="tab-header"><h2>⚔️ PvP</h2><p>Напади на другого игрока</p></div>
+                    <div id="bounties-section"></div>
                     <div id="pvp-targets"></div>
                     <button class="btn btn-primary" onclick="loadPvpTargets()" style="margin-top:10px;width:100%">Найти жертву</button>
                 </div>
@@ -419,6 +433,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=40"></script>
+    <script src="js/app.js?v=41"></script>
 </body>
 </html>

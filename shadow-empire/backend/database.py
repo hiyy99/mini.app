@@ -294,6 +294,19 @@ async def init_db():
         UNIQUE(telegram_id, talent_id)
     );
 
+    CREATE TABLE IF NOT EXISTS bounties (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        poster_id INTEGER NOT NULL,
+        target_id INTEGER NOT NULL,
+        reward REAL NOT NULL,
+        status TEXT DEFAULT 'active',
+        claimed_by INTEGER DEFAULT NULL,
+        created_at REAL DEFAULT (strftime('%s','now')),
+        completed_at REAL DEFAULT 0,
+        FOREIGN KEY (poster_id) REFERENCES players(telegram_id),
+        FOREIGN KEY (target_id) REFERENCES players(telegram_id)
+    );
+
     CREATE TABLE IF NOT EXISTS gang_wars (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         attacker_gang_id INTEGER NOT NULL,
@@ -341,6 +354,7 @@ async def init_db():
         ("players", "pvp_cooldown_ts", "ALTER TABLE players ADD COLUMN pvp_cooldown_ts REAL DEFAULT 0"),
         ("players", "notifications_enabled", "ALTER TABLE players ADD COLUMN notifications_enabled INTEGER DEFAULT 1"),
         ("gangs", "last_heist_ts", "ALTER TABLE gangs ADD COLUMN last_heist_ts REAL DEFAULT 0"),
+        ("players", "bribe_cooldown_ts", "ALTER TABLE players ADD COLUMN bribe_cooldown_ts REAL DEFAULT 0"),
     ]
     for table, column, sql in migrations:
         try:
@@ -409,6 +423,8 @@ async def init_db():
         "CREATE INDEX IF NOT EXISTS idx_gw_def ON gang_wars(defender_gang_id)",
         "CREATE INDEX IF NOT EXISTS idx_ref_referrer ON referrals(referrer_id)",
         "CREATE INDEX IF NOT EXISTS idx_terr_owner ON territories(owner_gang_id)",
+        "CREATE INDEX IF NOT EXISTS idx_bounty_target ON bounties(target_id)",
+        "CREATE INDEX IF NOT EXISTS idx_bounty_poster ON bounties(poster_id)",
     ]
     for stmt in index_statements:
         try:
