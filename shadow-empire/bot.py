@@ -37,9 +37,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ref_param = context.args[0]  # e.g. "ref_12345"
 
     url = WEBAPP_URL
+    sep = "&" if "?" in url else "?"
+    url += f"{sep}_v=24"
     if ref_param:
-        sep = "&" if "?" in url else "?"
-        url += f"{sep}ref={ref_param}"
+        url += f"&ref={ref_param}"
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(
