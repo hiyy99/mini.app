@@ -108,23 +108,23 @@ UPGRADES = {
     },
     "safe_house": {
         "name": "Конспиративная квартира", "emoji": "🏠", "base_cost": 100000,
-        "cost_multiplier": 3.5, "effect": "raid_protection",
-        "description": "Защита от следующего рейда",
+        "cost_multiplier": 3.5, "effect": "suspicion_reset",
+        "description": "Обнулить подозрение (усиленная)",
     },
     "laundering_boost": {
         "name": "Схема отмывания", "emoji": "💸", "base_cost": 200000,
         "cost_multiplier": 2.5, "effect": "income_boost_10",
-        "description": "+10% к доходу навсегда",
+        "description": "+5 Страха, +5 Уважения",
     },
     "territory": {
-        "name": "Купить территорию", "emoji": "🗺", "base_cost": 400000,
+        "name": "Расширение влияния", "emoji": "🗺", "base_cost": 400000,
         "cost_multiplier": 3.0, "effect": "territory",
-        "description": "Новый район = больше дохода",
+        "description": "+3 Страха, +3 Уважения",
     },
     "bodyguards": {
         "name": "Охрана", "emoji": "🛡", "base_cost": 150000,
         "cost_multiplier": 2.5, "effect": "pvp_defense",
-        "description": "+10 к силе защиты в PvP",
+        "description": "+5 Уважения",
     },
 }
 

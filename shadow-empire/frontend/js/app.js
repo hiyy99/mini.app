@@ -409,7 +409,11 @@ function renderCharacter() {
     const bonusEl = $('#char-bonuses');
     if (!eqEl) return;
 
-    $('#char-nickname').textContent = S.character.nickname || 'Новичок';
+    const nickEl = $('#char-nickname');
+    nickEl.textContent = S.character.nickname || 'Новичок';
+    nickEl.style.cursor = 'pointer';
+    nickEl.title = 'Нажми чтобы сменить';
+    nickEl.onclick = promptNickname;
     $('#char-level').textContent = S.playerLevel;
 
     // ── Avatar (paper doll) ──
@@ -753,8 +757,7 @@ function renderInventory() {
             } else if (isOnMarket) {
                 actions = `<span class="inv-market-badge">На площадке</span>`;
             } else {
-                actions = `<button class="btn-shop owned" onclick="equipItem('${inv.item_id}')">Надеть</button>
-                    <button class="btn-sell-small" onclick="promptSell('${inv.item_id}')">Продать</button>`;
+                actions = `<button class="btn-shop owned" onclick="equipItem('${inv.item_id}')">Надеть</button>`;
             }
 
             html += `<div class="inv-item" style="border-left:3px solid ${rarityColor(r)}">
@@ -1177,6 +1180,18 @@ async function equipItem(id) {
         S.character = r.character; S.inventory = r.inventory;
         renderCharacter(); renderShop(); renderWeapons(); renderInventory();
     } catch(e) {}
+}
+
+async function promptNickname() {
+    const current = S.character?.nickname || 'Новичок';
+    const nick = prompt('Введи новый никнейм (2-16 символов):', current);
+    if (!nick || nick.trim() === current) return;
+    try {
+        const r = await api('/api/nickname', { telegram_id: S.player.telegram_id, nickname: nick.trim() });
+        S.character = r.character;
+        renderCharacter();
+        showPopup('✅', 'Никнейм изменён', '', nick.trim(), '');
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || 'Не удалось сменить никнейм', ''); }
 }
 
 // ── Cases Actions ──
@@ -2245,7 +2260,6 @@ function renderVipShop() {
             </div>
             <div class="vip-package-actions">
                 <button class="btn-stars" onclick="buyWithStars('${id}')">⭐ ${pkg.stars}</button>
-                ${tonPrice ? `<button class="btn-ton" onclick="buyWithTon('${id}')">💎 ${tonPrice} TON</button>` : ''}
             </div>
         </div>`;
     }
@@ -2262,7 +2276,6 @@ function renderVipShop() {
             </div>
             <div class="vip-package-actions">
                 <button class="btn-stars" onclick="buyWithStars('${id}')">⭐ ${pkg.stars}</button>
-                ${tonPrice ? `<button class="btn-ton" onclick="buyWithTon('${id}')">💎 ${tonPrice} TON</button>` : ''}
             </div>
         </div>`;
     }
@@ -2279,7 +2292,6 @@ function renderVipShop() {
             </div>
             <div class="vip-package-actions">
                 <button class="btn-stars" onclick="buyWithStars('${id}')">⭐ ${pkg.stars}</button>
-                ${tonPrice ? `<button class="btn-ton" onclick="buyWithTon('${id}')">💎 ${tonPrice} TON</button>` : ''}
             </div>
         </div>`;
     }
@@ -2506,9 +2518,9 @@ function renderQuests() {
 function renderEventBanner() {
     const banner = $('#event-banner');
     if (!banner) return;
-    if (!S.activeEvent) { banner.classList.add('hidden'); return; }
-
-    banner.classList.remove('hidden');
+    // Seasonal events disabled — always hide banner
+    banner.classList.add('hidden');
+    if (!S.activeEvent) return;
     $('#event-banner-emoji').textContent = S.activeEvent.emoji;
     $('#event-banner-name').textContent = S.activeEvent.name;
 

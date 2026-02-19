@@ -322,6 +322,10 @@ class TalentAssignRequest(BaseModel):
     telegram_id: int
     talent_id: str
 
+class NicknameRequest(BaseModel):
+    telegram_id: int
+    nickname: str
+
 
 # ── Helpers ──
 
@@ -785,11 +789,43 @@ def get_active_weekly_event():
     return WEEKLY_EVENTS.get(dow)
 
 def get_event_income_multiplier():
-    """Get income multiplier from seasonal event only (weekly events don't stack income)."""
+    """Get income multiplier from seasonal event + weekly event (Mon/Sun income bonus)."""
+    mult = 1.0
     ev = get_active_event()
-    if not ev:
-        return 1.0
-    return ev["bonuses"].get("income_multiplier", 1.0)
+    if ev:
+        mult *= ev["bonuses"].get("income_multiplier", 1.0)
+    weekly = get_active_weekly_event()
+    if weekly and weekly.get("bonus_type") == "income":
+        mult *= weekly["multiplier"]
+    return mult
+
+def get_weekly_robbery_multiplier():
+    """Tuesday: +25% robbery rewards."""
+    weekly = get_active_weekly_event()
+    if weekly and weekly.get("bonus_type") == "robbery":
+        return weekly["multiplier"]
+    return 1.0
+
+def get_weekly_casino_multiplier():
+    """Thursday: +15% casino payouts."""
+    weekly = get_active_weekly_event()
+    if weekly and weekly.get("bonus_type") == "casino":
+        return weekly["multiplier"]
+    return 1.0
+
+def get_weekly_pvp_multiplier():
+    """Friday: +30% PvP steal."""
+    weekly = get_active_weekly_event()
+    if weekly and weekly.get("bonus_type") == "pvp":
+        return weekly["multiplier"]
+    return 1.0
+
+def get_weekly_loot_multiplier():
+    """Saturday: +20% chance boost for rare+ items in cases."""
+    weekly = get_active_weekly_event()
+    if weekly and weekly.get("bonus_type") == "loot":
+        return weekly["multiplier"]
+    return 1.0
 
 
 # ── Bosses ──
@@ -1278,6 +1314,7 @@ async def do_robbery(req: RobberyRequest):
             talents = await get_player_talents(db, req.telegram_id)
             tb = get_talent_bonuses(talents)
             success, reward, suspicion_gain = attempt_robbery(req.robbery_id, player["reputation_fear"], reward_bonus_pct=tb["big_loot"])
+            reward = round(reward * get_weekly_robbery_multiplier(), 2)
             new_cash = player["cash"] + reward
             new_suspicion = min(player["suspicion"] + suspicion_gain, MAX_SUSPICION)
             actual_cd = max(5, cfg["cooldown_seconds"] * (1 - tb["robbery_master"] / 100.0))
@@ -1391,6 +1428,9 @@ async def casino_play(req: CasinoBetRequest):
                         pass
                 result_data = {"number": number, "win": win, "color": "red" if number in ROULETTE_RED else "black" if number in ROULETTE_BLACK else "green"}
 
+            # Apply weekly casino bonus (Thursday)
+            if payout > 0:
+                payout = round(payout * get_weekly_casino_multiplier(), 2)
             net = payout - req.bet
             new_cash = player["cash"] + net
 
@@ -1507,6 +1547,29 @@ async def get_character_info(telegram_id: int):
         await db.close()
 
 
+@app.post("/api/nickname")
+async def set_nickname(req: NicknameRequest):
+    """Set player nickname (2-16 chars, alphanumeric + spaces + basic unicode)."""
+    import re
+    nick = req.nickname.strip()
+    if len(nick) < 2 or len(nick) > 16:
+        raise HTTPException(400, "Никнейм должен быть от 2 до 16 символов")
+    if not re.match(r'^[\w\s\-а-яА-ЯёЁ]+$', nick):
+        raise HTTPException(400, "Недопустимые символы в никнейме")
+    async with get_player_lock(req.telegram_id):
+        db = await get_db()
+        try:
+            await db.execute(
+                "UPDATE player_character SET nickname=? WHERE telegram_id=?",
+                (nick, req.telegram_id),
+            )
+            await db.commit()
+            character = await get_character(db, req.telegram_id)
+            return {"character": character}
+        finally:
+            await db.close()
+
+
 # ── Cases ──
 
 @app.post("/api/case/buy")
@@ -1564,15 +1627,17 @@ async def open_case(req: CaseOpenRequest):
             talents = await get_player_talents(db, req.telegram_id)
             tb = get_talent_bonuses(talents)
             lootbox_boost = tb["lootbox_master"]  # % boost for rare+
+            weekly_loot_mult = get_weekly_loot_multiplier()
             loot = case_cfg["loot"]
             items = [l["item_id"] for l in loot]
             weights = []
             for l in loot:
                 w = l["weight"]
-                if lootbox_boost > 0:
-                    item_rarity = SHOP_ITEMS.get(l["item_id"], {}).get("rarity", "common")
-                    if item_rarity in ("rare", "epic", "legendary"):
+                item_rarity = SHOP_ITEMS.get(l["item_id"], {}).get("rarity", "common")
+                if item_rarity in ("rare", "epic", "legendary"):
+                    if lootbox_boost > 0:
                         w *= (1 + lootbox_boost / 100.0)
+                    w *= weekly_loot_mult
                 weights.append(w)
 
             won_item_id = None
@@ -1646,15 +1711,17 @@ async def spin_case(req: CaseSpinRequest):
             talents = await get_player_talents(db, req.telegram_id)
             tb = get_talent_bonuses(talents)
             lootbox_boost = tb["lootbox_master"]
+            weekly_loot_mult = get_weekly_loot_multiplier()
             loot = case_cfg["loot"]
             items = [l["item_id"] for l in loot]
             weights = []
             for l in loot:
                 w = l["weight"]
-                if lootbox_boost > 0:
-                    item_rarity = SHOP_ITEMS.get(l["item_id"], {}).get("rarity", "common")
-                    if item_rarity in ("rare", "epic", "legendary"):
+                item_rarity = SHOP_ITEMS.get(l["item_id"], {}).get("rarity", "common")
+                if item_rarity in ("rare", "epic", "legendary"):
+                    if lootbox_boost > 0:
                         w *= (1 + lootbox_boost / 100.0)
+                    w *= weekly_loot_mult
                 weights.append(w)
 
             won_item_id = None
@@ -2096,6 +2163,7 @@ async def pvp_attack(req: PvpAttackRequest):
             if win:
                 steal_pct = PVP_STEAL_PERCENT + weapon_bonus
                 steal = defender["cash"] * steal_pct * (1 - defense_bonus)
+                steal = round(steal * get_weekly_pvp_multiplier(), 2)
                 steal = min(steal, 50000)
                 await db.execute("UPDATE players SET cash=cash+?, pvp_wins=pvp_wins+1 WHERE telegram_id=?", (steal, req.telegram_id))
                 await db.execute("UPDATE players SET cash=MAX(0, cash-?) WHERE telegram_id=?", (steal, req.target_id))

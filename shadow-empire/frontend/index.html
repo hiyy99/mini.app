@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Shadow Empire</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <link rel="stylesheet" href="css/style.css?v=37">
+    <link rel="stylesheet" href="css/style.css?v=38">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
-    <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
+    <!-- TON Connect removed — Stars-only payments -->
+    <!-- <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script> -->
 </head>
 <body>
     <div id="loading-screen">
@@ -312,8 +313,8 @@
                     <div class="tab-header"><h2>🔫 Чёрный рынок</h2><p>Оружие и торговля</p></div>
                     <h3 style="margin:10px 0 8px;font-size:.9rem">⚔️ Оружие</h3>
                     <div id="weapons-list" class="shop-list"></div>
-                    <h3 style="margin:14px 0 8px;font-size:.9rem">🏪 Площадка игроков</h3>
-                    <div id="market-listings-list" class="shop-list"></div>
+                    <!-- Player marketplace disabled -->
+                    <div id="market-listings-list" class="shop-list hidden"></div>
                 </div>
                 <!-- VIP Shop -->
                 <div id="shop-vip-section" class="hidden">
@@ -331,7 +332,7 @@
                     <!-- Character card -->
                     <div class="char-card" id="char-card">
                         <div class="char-card-header">
-                            <div class="char-card-name"><span id="char-vip-badge" class="char-vip-badge hidden">👑 </span><span id="char-nickname">Новичок</span></div>
+                            <div class="char-card-name"><span id="char-vip-badge" class="char-vip-badge hidden">👑 </span><span id="char-nickname">Новичок</span> <span style="font-size:0.7em;opacity:0.5">✏️</span></div>
                             <div class="char-card-level">Ур. <span id="char-level">0</span></div>
                         </div>
                         <div class="char-avatar" id="char-avatar"></div>
@@ -354,8 +355,8 @@
                         <h3>🎒 Инвентарь</h3>
                         <div id="inv-list" class="inv-list"></div>
                     </div>
-                    <!-- My market listings -->
-                    <div class="inv-section" id="my-listings-section">
+                    <!-- My market listings (disabled — market removed) -->
+                    <div class="inv-section hidden" id="my-listings-section">
                         <h3>📋 Мои лоты на площадке</h3>
                         <div id="my-listings-list" class="shop-list"></div>
                     </div>
@@ -429,6 +430,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=37"></script>
+    <script src="js/app.js?v=38"></script>
 </body>
 </html>
