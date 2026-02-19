@@ -2649,11 +2649,31 @@ function renderHeists() {
 }
 
 async function loadActiveHeist() {
-    // We'll just show active heist if any
     const el = document.getElementById('active-heist');
-    if (!el) return;
-    // No dedicated endpoint yet — user starts/joins/executes
-    el.innerHTML = '';
+    if (!el || !S.player?.gang_id) return;
+    try {
+        const r = await fetch(API + '/api/gang/heists/' + S.player.gang_id).then(r => r.json());
+        if (!r.heists || !r.heists.length) { el.innerHTML = ''; return; }
+        let html = '<div style="font-weight:700;margin-bottom:8px">🔴 Активные налёты</div>';
+        for (const h of r.heists) {
+            const cfg = S.gangHeistsCfg[h.heist_type] || {};
+            const participants = h.participants ? h.participants.split(',') : [];
+            const alreadyJoined = participants.includes(String(S.player.telegram_id));
+            const minMembers = cfg.min_members || 2;
+            const canExecute = participants.length >= minMembers;
+            html += `<div class="gang-upgrade-card" style="flex-direction:column;align-items:stretch;margin-bottom:8px;border:1px solid var(--gold)">
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+                    <span style="font-weight:700">${cfg.emoji || '🏴'} ${cfg.name || h.heist_type}</span>
+                    <span style="color:var(--gold)">${participants.length}/${minMembers} участников</span>
+                </div>
+                <div style="display:flex;gap:8px">
+                    ${!alreadyJoined ? `<button class="btn btn-primary" onclick="joinHeist(${h.id})" style="flex:1">✋ Присоединиться</button>` : '<span style="color:var(--green);align-self:center;flex:1;text-align:center">✅ Ты участвуешь</span>'}
+                    ${canExecute ? `<button class="btn btn-primary" onclick="executeHeist(${h.id})" style="flex:1;background:var(--gold)">⚡ Выполнить</button>` : ''}
+                </div>
+            </div>`;
+        }
+        el.innerHTML = html;
+    } catch(e) { el.innerHTML = ''; }
 }
 
 async function startHeist(heistType) {

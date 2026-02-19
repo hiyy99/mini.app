@@ -3415,6 +3415,20 @@ async def gang_heist_execute(req: GangHeistExecuteRequest):
             await db.close()
 
 
+@app.get("/api/gang/heists/{gang_id}")
+async def get_active_heists(gang_id: int):
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM gang_heists WHERE gang_id=? AND status='recruiting' ORDER BY id DESC",
+            (gang_id,),
+        )
+        heists = [dict(r) for r in await cursor.fetchall()]
+        return {"heists": heists}
+    finally:
+        await db.close()
+
+
 # ── Gang Wars ──
 
 class GangWarDeclareRequest(BaseModel):
