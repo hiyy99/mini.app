@@ -877,7 +877,11 @@ async def player_init(req: PlayerInit):
     # Validate Telegram initData
     if req.init_data:
         user = validate_init_data(req.init_data)
-        if not user or user.get("id") != req.telegram_id:
+        if not user:
+            print(f"initData: HMAC failed for tid={req.telegram_id}")
+            raise HTTPException(403, "Invalid initData")
+        if user.get("id") != req.telegram_id:
+            print(f"initData: ID mismatch user_id={user.get('id')} ({type(user.get('id'))}) req_tid={req.telegram_id} ({type(req.telegram_id)})")
             raise HTTPException(403, "Invalid initData")
     db = await get_db()
     try:
