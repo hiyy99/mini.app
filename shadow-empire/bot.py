@@ -144,6 +144,15 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             logger.info(f"Skin case added for {tid}")
 
+        elif package_id == "season_1_premium":
+            now = time.time()
+            await db.execute(
+                "INSERT INTO player_season_pass (telegram_id, season_id, is_premium, purchased_at) VALUES (?,?,1,?) "
+                "ON CONFLICT(telegram_id) DO UPDATE SET is_premium=1, purchased_at=?",
+                (tid, "season_1", now, now),
+            )
+            logger.info(f"Season pass premium activated for {tid}")
+
         else:
             logger.error(f"Unknown package_id: {package_id}")
             await db.close()
