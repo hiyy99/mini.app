@@ -981,8 +981,8 @@ GANG_WAR_CONFIG = {
     "min_gang_level": 3,  # minimum total gang power
     "score_per_pvp_win": 10,
     "score_per_territory_capture": 25,
-    "winner_reward": 200000,
-    "loser_reward": 20000,
+    "winner_reward": 10000000,
+    "loser_reward": 1000000,
 }
 
 # ── PvP Equipment Bonuses ──

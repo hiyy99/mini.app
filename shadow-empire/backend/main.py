@@ -3565,6 +3565,7 @@ async def increment_war_score(db, gang_id: int, score_type: str):
         await db.execute("UPDATE gang_wars SET attacker_score=attacker_score+? WHERE id=?", (score, war["id"]))
     else:
         await db.execute("UPDATE gang_wars SET defender_score=defender_score+? WHERE id=?", (score, war["id"]))
+    await db.commit()
 
 
 if __name__ == "__main__":
