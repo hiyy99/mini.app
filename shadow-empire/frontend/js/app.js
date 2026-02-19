@@ -2090,9 +2090,8 @@ async function watchAd(rewardType) {
         // Ad watched successfully — claim reward
         claimAdReward(rewardType);
     } catch(e) {
-        // User closed ad or ad failed
+        // User closed ad or ad failed — Adsgram SDK shows its own notification
         console.log('Ad not completed', e);
-        showPopup('📺', 'Реклама', '', 'Реклама сейчас недоступна, попробуй позже', '');
     }
 }
 
