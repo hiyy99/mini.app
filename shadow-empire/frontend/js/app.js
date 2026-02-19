@@ -6,7 +6,6 @@ let S = {
     casinoCfg: {}, shopItems: {}, character: null, inventory: [],
     upgradesCfg: {}, upgrades: [],
     casesCfg: {}, playerCases: [], rarities: {},
-    marketListings: [], myListings: [],
     incomePerSec: 0, suspicionPerSec: 0, playerLevel: 0,
     displayCash: 0, lastTick: Date.now(), currentShopTab: 'hat',
     referralCount: 0,
@@ -23,8 +22,6 @@ let S = {
     playerSkins: [], equippedSkins: {}, skinsCfg: {}, skinRarities: {}, skinCase: {}, skinCaseVip: {},
     // Tournament
     tournamentScore: 0, tournamentPrize: null,
-    // Quests
-    playerQuests: [], questLines: [],
     // Events
     activeEvent: null, eventProgress: null,
     // Boss
@@ -35,8 +32,8 @@ let S = {
     talentTreeCfg: {}, playerTalents: {}, talentPoints: 0,
     // Weekly event
     weeklyEvent: null,
-    // Gang heists & wars
-    gangHeistsCfg: {}, gangWarCfg: {},
+    // Gang wars
+    gangWarCfg: {},
 };
 
 // ── Adsgram SDK ──
@@ -94,8 +91,6 @@ async function init() {
         S.casesCfg = r.cases_config || {};
         S.playerCases = r.player_cases || [];
         S.rarities = r.rarities || {};
-        S.marketListings = r.market_listings || [];
-        S.myListings = r.my_listings || [];
         // New features
         S.dailyMissions = r.daily_missions || [];
         S.loginData = r.login_data || null;
@@ -123,9 +118,6 @@ async function init() {
         // Tournament
         S.tournamentScore = r.tournament_score || 0;
         S.tournamentPrize = r.tournament_prize || null;
-        // Quests
-        S.playerQuests = r.player_quests || [];
-        S.questLines = r.quest_lines || [];
         // Events
         S.activeEvent = r.active_event || null;
         S.eventProgress = r.event_progress || null;
@@ -140,8 +132,7 @@ async function init() {
         S.talentPoints = r.talent_points || 0;
         // Weekly event
         S.weeklyEvent = r.weekly_event || null;
-        // Gang heists & wars
-        S.gangHeistsCfg = r.gang_heists_config || {};
+        // Gang wars
         S.gangWarCfg = r.gang_war_config || {};
         // Season Pass
         S.seasonPass = r.season_pass || {};
@@ -157,6 +148,10 @@ async function init() {
         // Show login reward popup if can claim
         if (S.loginData && S.loginData.can_claim) {
             setTimeout(() => showLoginOverlay(), 800);
+        }
+        // Tutorial for new players
+        if (S.businesses.length === 0 && !localStorage.getItem('tutorial_done')) {
+            setTimeout(startTutorial, 1000);
         }
     } catch(e) { document.querySelector('.loading-sub').textContent = 'Ошибка подключения'; }
 }
@@ -225,11 +220,11 @@ function itemBonusText(item) {
 function renderAll() {
     updateHUD(); renderBusiness('legal'); renderBusiness('shadow'); renderUpgrades();
     renderRobberies(); renderCharacter(); renderShop(); renderCases();
-    renderWeapons(); renderMarketListings(); renderInventory(); renderMyListings();
+    renderInventory();
     renderGang(); renderReferral();
     renderMissions(); renderPrestige(); renderTalentTree(); renderTerritories(); renderAchievements();
     renderLeaderboard(); renderVipShop(); updateAdButtons(); updateVipBadges();
-    renderTournament(); renderQuests(); renderEventBanner(); renderBoss();
+    renderTournament(); renderEventBanner(); renderBoss();
     renderWeeklyEventBanner();
 }
 
@@ -512,6 +507,20 @@ function renderCharacter() {
     if (totalBonuses.suspicion_reduce > 0) bonusHtml += `<span class="char-bonus-tag suspicion">🛡 Подозрение -${totalBonuses.suspicion_reduce}%</span>`;
     if (!bonusHtml) bonusHtml = '<span class="char-bonus-tag empty-tag">Нет бонусов</span>';
     bonusEl.innerHTML = '<div class="char-bonus-title">Бонусы от экипировки</div>' + bonusHtml;
+
+    // Notification toggle
+    const notifEnabled = S.player?.notifications_enabled !== 0;
+    const existingBtn = document.getElementById('notif-toggle-btn');
+    if (existingBtn) existingBtn.remove();
+    const charCard = $('#char-card');
+    if (charCard) {
+        const btn = document.createElement('button');
+        btn.id = 'notif-toggle-btn';
+        btn.className = 'notif-toggle-btn';
+        btn.textContent = notifEnabled ? '🔔 Уведомления: ВКЛ' : '🔕 Уведомления: ВЫКЛ';
+        btn.onclick = toggleNotifications;
+        charCard.after(btn);
+    }
 }
 
 // ── Prestige ──
@@ -749,13 +758,9 @@ function renderInventory() {
             const r = item.rarity || 'common';
             const equipped = inv.equipped;
             const bonus = itemBonusText(item);
-            const isOnMarket = S.myListings.some(l => l.item_id === inv.item_id);
-
             let actions = '';
             if (equipped) {
                 actions = `<span class="inv-equipped-badge">Надето</span>`;
-            } else if (isOnMarket) {
-                actions = `<span class="inv-market-badge">На площадке</span>`;
             } else {
                 actions = `<button class="btn-shop owned" onclick="equipItem('${inv.item_id}')">Надеть</button>`;
             }
@@ -775,35 +780,6 @@ function renderInventory() {
         }
         listEl.innerHTML = html;
     }
-}
-
-// ── My Market Listings ──
-function renderMyListings() {
-    const el = $('#my-listings-list');
-    const section = $('#my-listings-section');
-    if (!el) return;
-    if (S.myListings.length === 0) {
-        if (section) section.classList.add('hidden');
-        return;
-    }
-    if (section) section.classList.remove('hidden');
-    let html = '';
-    for (const l of S.myListings) {
-        const item = S.shopItems[l.item_id];
-        if (!item) continue;
-        const r = item.rarity || 'common';
-        html += `<div class="shop-item" style="border-left:3px solid ${rarityColor(r)}">
-            <div class="shop-item-emoji">${item.emoji}</div>
-            <div class="shop-item-info">
-                <div class="shop-item-name" style="color:${rarityColor(r)}">${item.name}</div>
-                <div class="shop-item-bonus">$${fmt(l.price)}</div>
-            </div>
-            <div class="shop-item-actions">
-                <button class="btn-shop" style="background:var(--red)" onclick="cancelListing('${l.item_id}',${l.price})">Снять</button>
-            </div>
-        </div>`;
-    }
-    el.innerHTML = html;
 }
 
 // ── Shop (regular items) ──
@@ -902,66 +878,6 @@ function renderCases() {
             </button>
         </div>`;
     }
-}
-
-// ── Weapons (Black Market Shop) ──
-function renderWeapons() {
-    const el = $('#weapons-list');
-    if (!el) return;
-    el.innerHTML = '';
-    const weapons = Object.entries(S.shopItems).filter(([k,v]) => v.slot === 'weapon' && !v.case_only);
-    for (const [id, item] of weapons) {
-        const owned = S.inventory.find(i => i.item_id === id);
-        const equipped = owned?.equipped;
-        const afford = S.displayCash >= item.price;
-        const r = item.rarity || 'common';
-        const bonus = itemBonusText(item);
-        let btn;
-        if (equipped) btn = `<button class="btn-shop equipped" disabled>Надето</button>`;
-        else if (owned) btn = `<button class="btn-shop owned" onclick="equipItem('${id}')">Надеть</button>`;
-        else btn = `<button class="btn-shop" onclick="buyItem('${id}')" ${afford?'':'disabled'}>$${fmt(item.price)}</button>`;
-        el.innerHTML += `<div class="shop-item" style="border-left:3px solid ${rarityColor(r)}">
-            <div class="shop-item-emoji">${item.emoji}</div>
-            <div class="shop-item-info">
-                <div class="shop-item-name" style="color:${rarityColor(r)}">${item.name}</div>
-                <div class="shop-item-rarity">${rarityName(r)}</div>
-                <div class="shop-item-desc">${item.description || ''}</div>
-                ${bonus ? `<div class="shop-item-bonus">${bonus}</div>` : ''}
-            </div>
-            <div class="shop-item-actions">${btn}</div></div>`;
-    }
-}
-
-// ── Market Listings (Player-to-Player) ──
-function renderMarketListings() {
-    const el = $('#market-listings-list');
-    if (!el) return;
-    if (S.marketListings.length === 0) {
-        el.innerHTML = '<div class="inv-empty">Пока нет лотов от игроков</div>';
-        return;
-    }
-    let html = '';
-    for (const l of S.marketListings) {
-        const item = S.shopItems[l.item_id];
-        if (!item) continue;
-        const r = item.rarity || 'common';
-        const afford = S.displayCash >= l.price;
-        const bonus = itemBonusText(item);
-        const alreadyOwned = S.inventory.some(i => i.item_id === l.item_id);
-        html += `<div class="shop-item" style="border-left:3px solid ${rarityColor(r)}">
-            <div class="shop-item-emoji">${item.emoji}</div>
-            <div class="shop-item-info">
-                <div class="shop-item-name" style="color:${rarityColor(r)}">${item.name}</div>
-                <div class="shop-item-rarity">${rarityName(r)} ${bonus ? '• ' + bonus : ''}</div>
-                <div class="shop-item-desc">Продавец: ${escapeHtml(l.seller_name) || 'Игрок'}</div>
-            </div>
-            <div class="shop-item-actions">
-                ${alreadyOwned ? '<button class="btn-shop" disabled>Уже есть</button>'
-                : `<button class="btn-shop" onclick="buyFromMarket(${l.id})" ${afford?'':'disabled'}>$${fmt(l.price)}</button>`}
-            </div>
-        </div>`;
-    }
-    el.innerHTML = html;
 }
 
 function renderGang() {
@@ -1178,7 +1094,7 @@ async function equipItem(id) {
     try {
         const r = await api('/api/shop/equip', { telegram_id: S.player.telegram_id, item_id: id });
         S.character = r.character; S.inventory = r.inventory;
-        renderCharacter(); renderShop(); renderWeapons(); renderInventory();
+        renderCharacter(); renderShop(); renderInventory();
     } catch(e) {}
 }
 
@@ -1477,49 +1393,6 @@ function closeCaseOverlay() {
     result.classList.remove('case-result-appear');
     result.classList.add('hidden');
     okBtn.classList.add('hidden');
-}
-
-// ── Market Actions ──
-function promptSell(itemId) {
-    const item = S.shopItems[itemId];
-    if (!item) return;
-    const suggestedPrice = item.price > 0 ? Math.floor(item.price * 0.8) : 5000;
-    const price = prompt(`Продать "${item.name}" на площадке.\nУкажи цену (мин. $100, комиссия 10%):`, suggestedPrice);
-    if (!price) return;
-    const p = parseFloat(price);
-    if (isNaN(p) || p < 100) { showPopup('❌', 'Ошибка', 'Мин. цена $100', '', ''); return; }
-    sellOnMarket(itemId, p);
-}
-
-async function sellOnMarket(itemId, price) {
-    try {
-        const r = await api('/api/market/sell', { telegram_id: S.player.telegram_id, item_id: itemId, price });
-        S.inventory = r.inventory; S.myListings = r.my_listings;
-        const item = S.shopItems[itemId];
-        showPopup('🏪', 'Выставлено!', item.name, '$' + fmt(price), 'Комиссия 10% при продаже');
-        renderInventory(); renderMyListings(); renderCharacter();
-    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
-}
-
-async function buyFromMarket(listingId) {
-    try {
-        const r = await api('/api/market/buy', { telegram_id: S.player.telegram_id, listing_id: listingId });
-        S.player = r.player; S.inventory = r.inventory; S.displayCash = r.player.cash;
-        // Remove from local market listings
-        S.marketListings = S.marketListings.filter(l => l.id !== listingId);
-        const item = S.shopItems[r.bought_item_id];
-        showPopup('🛍', 'Куплено!', item?.name || '', '', '');
-        renderMarketListings(); renderInventory(); renderCharacter(); updateHUD();
-    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
-}
-
-async function cancelListing(itemId, price) {
-    try {
-        const r = await api('/api/market/cancel', { telegram_id: S.player.telegram_id, item_id: itemId, price });
-        S.inventory = r.inventory; S.myListings = r.my_listings;
-        showPopup('↩️', 'Снято', 'Предмет возвращён', '', '');
-        renderInventory(); renderMyListings();
-    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
 
 // ── Casino ──
@@ -2042,7 +1915,6 @@ function switchShopSection(section, btn) {
     // Toggle sections
     $('#shop-items-section').classList.toggle('hidden', section !== 'items');
     $('#shop-cases-section').classList.toggle('hidden', section !== 'cases');
-    $('#shop-market-section').classList.toggle('hidden', section !== 'market');
     $('#shop-vip-section').classList.toggle('hidden', section !== 'vip');
     if (section === 'vip') renderVipShop();
 }
@@ -2060,7 +1932,6 @@ function switchDelaSubTab(section, btn) {
     btn.classList.add('active');
     $('#dela-robberies').classList.toggle('hidden', section !== 'robberies');
     $('#dela-missions').classList.toggle('hidden', section !== 'missions');
-    $('#dela-quests').classList.toggle('hidden', section !== 'quests');
     $('#dela-season-pass').classList.toggle('hidden', section !== 'season-pass');
     if (section === 'season-pass') renderSeasonPass();
 }
@@ -2075,7 +1946,7 @@ function switchCharSubTab(section, btn) {
 function switchGangSubTab(section, btn) {
     btn.closest('.sub-tabs').querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    const sections = ['gang-main','gang-territories','gang-pvp','gang-heists','gang-wars','gang-tournament','gang-boss','gang-leaderboard'];
+    const sections = ['gang-main','gang-territories','gang-pvp','gang-wars','gang-tournament','gang-boss','gang-leaderboard'];
     sections.forEach(s => {
         const el = document.getElementById(s);
         if (el) el.classList.toggle('hidden', s !== section);
@@ -2083,7 +1954,6 @@ function switchGangSubTab(section, btn) {
     if (section === 'gang-leaderboard') loadLeaderboard();
     if (section === 'gang-tournament') loadTournamentLeaderboard();
     if (section === 'gang-boss') loadBossData();
-    if (section === 'gang-heists') renderHeists();
     if (section === 'gang-wars') loadGangWars();
 }
 
@@ -2464,56 +2334,6 @@ async function loadTournamentLeaderboard() {
     } catch (e) { el.innerHTML = '<div class="inv-empty">Ошибка загрузки</div>'; }
 }
 
-// ── Quests ──
-function renderQuests() {
-    const el = $('#quests-list');
-    if (!el) return;
-    if (!S.questLines.length) {
-        el.innerHTML = '<div class="inv-empty">Квестов пока нет</div>';
-        return;
-    }
-    let html = '';
-    for (const ql of S.questLines) {
-        const pq = S.playerQuests.find(q => q.quest_id === ql.id);
-        const isLocked = !pq;
-        const isCompleted = pq && pq.completed;
-        const currentStep = pq ? pq.current_step : 0;
-        const stepProgress = pq ? pq.step_progress : 0;
-
-        html += `<div class="quest-line-card ${isLocked ? 'quest-locked' : ''} ${isCompleted ? 'quest-completed' : ''}">
-            <div class="quest-line-header">
-                <span class="quest-line-emoji">${ql.emoji}</span>
-                <div class="quest-line-info">
-                    <div class="quest-line-name">${ql.name}</div>
-                    <div class="quest-line-desc">${isLocked ? 'Нужен ур. ' + ql.unlock_level : isCompleted ? 'Завершено!' : 'Шаг ' + (currentStep + 1) + '/' + ql.steps.length}</div>
-                </div>
-            </div>`;
-
-        if (!isLocked) {
-            html += '<div class="quest-steps">';
-            for (let i = 0; i < ql.steps.length; i++) {
-                const step = ql.steps[i];
-                const isDone = i < currentStep;
-                const isCurrent = i === currentStep && !isCompleted;
-                const progress = isCurrent ? stepProgress : isDone ? step.target : 0;
-                const pct = Math.min(100, Math.round(progress / step.target * 100));
-                html += `<div class="quest-step ${isDone ? 'quest-step-done' : ''} ${isCurrent ? 'quest-step-current' : ''}">
-                    <div class="quest-step-marker">${isDone ? '✅' : isCurrent ? '▶️' : '⬜'}</div>
-                    <div class="quest-step-body">
-                        <div class="quest-step-desc">${step.description}</div>
-                        ${isCurrent ? `<div class="quest-step-bar"><div class="quest-step-fill" style="width:${pct}%"></div></div>
-                        <div class="quest-step-progress">${progress}/${step.target}</div>` : ''}
-                        <div class="quest-step-reward">${step.reward_type === 'cash' ? '$' + fmt(step.reward_amount) : '📦 ' + step.reward_amount}</div>
-                    </div>
-                </div>`;
-            }
-            html += '</div>';
-        }
-        html += '</div>';
-    }
-    el.innerHTML = html;
-}
-
 // ── Event Banner ──
 function renderEventBanner() {
     const banner = $('#event-banner');
@@ -2664,93 +2484,6 @@ function renderWeeklyEventBanner() {
     $('#weekly-event-emoji').textContent = S.weeklyEvent.emoji;
     $('#weekly-event-name').textContent = S.weeklyEvent.name;
     $('#weekly-event-desc').textContent = S.weeklyEvent.description;
-}
-
-// ── Gang Heists ──
-async function renderHeists() {
-    const el = $('#heists-section');
-    if (!el) return;
-    if (!S.player || !S.player.gang_id) {
-        el.innerHTML = '<p style="text-align:center;color:var(--text2)">Вступи в банду для участия в налётах</p>';
-        return;
-    }
-    // Load active heists first
-    let activeHeists = [];
-    try {
-        const r = await fetch(API + '/api/gang/heists/' + S.player.gang_id).then(r => r.json());
-        activeHeists = r.heists || [];
-    } catch(e) {}
-    const activeTypes = new Set(activeHeists.map(h => h.heist_type));
-
-    let html = '';
-    // Show active heists at the TOP
-    if (activeHeists.length) {
-        html += '<div style="font-weight:700;margin-bottom:8px">🔴 Активные налёты</div>';
-        for (const h of activeHeists) {
-            const cfg = S.gangHeistsCfg[h.heist_type] || {};
-            const participants = h.participants ? h.participants.split(',') : [];
-            const alreadyJoined = participants.includes(String(S.player.telegram_id));
-            const minMembers = cfg.min_members || 2;
-            const canExecute = participants.length >= minMembers;
-            html += `<div class="gang-upgrade-card" style="flex-direction:column;align-items:stretch;margin-bottom:8px;border:1px solid var(--gold)">
-                <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-                    <span style="font-weight:700">${cfg.emoji || '🏴'} ${cfg.name || h.heist_type}</span>
-                    <span style="color:var(--gold)">${participants.length}/${minMembers} участников</span>
-                </div>
-                <div style="display:flex;gap:8px">
-                    ${!alreadyJoined ? `<button class="btn btn-primary" onclick="joinHeist(${h.id})" style="flex:1">✋ Присоединиться</button>` : '<span style="color:var(--green);align-self:center;flex:1;text-align:center">✅ Ты участвуешь</span>'}
-                    ${canExecute ? `<button class="btn btn-primary" onclick="executeHeist(${h.id})" style="flex:1;background:var(--gold)">⚡ Выполнить</button>` : ''}
-                </div>
-            </div>`;
-        }
-    }
-    // Show available heists to start (hide ones that already have active)
-    html += '<div class="heists-list" style="margin-top:12px">';
-    for (const [hid, cfg] of Object.entries(S.gangHeistsCfg)) {
-        const isActive = activeTypes.has(hid);
-        html += `<div class="gang-upgrade-card" style="flex-direction:column;align-items:stretch;${isActive ? 'opacity:0.5' : ''}">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-                <span style="font-size:1.5rem">${cfg.emoji}</span>
-                <div>
-                    <div style="font-weight:700">${cfg.name}</div>
-                    <div style="font-size:.78rem;color:var(--text2)">${cfg.description}</div>
-                    <div style="font-size:.75rem;color:var(--gold)">Мин. участников: ${cfg.min_members} | Награда: $${fmt(cfg.min_reward)}-$${fmt(cfg.max_reward)}</div>
-                </div>
-            </div>
-            ${isActive ? '<div style="text-align:center;color:var(--gold);font-size:.85rem">⏳ Налёт уже идёт — присоединяйся выше</div>' : `<button class="btn btn-primary" onclick="startHeist('${hid}')" style="width:100%">🏴 Начать налёт</button>`}
-        </div>`;
-    }
-    html += '</div>';
-    el.innerHTML = html;
-}
-
-async function startHeist(heistType) {
-    if (!S.player) return;
-    try {
-        const r = await api('/api/gang/heist/start', { telegram_id: S.player.telegram_id, heist_type: heistType });
-        showPopup('🏴', 'Налёт начат!', r.config.name, 'Ожидание участников...', '');
-        renderHeists();
-    } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
-}
-
-async function joinHeist(heistId) {
-    if (!S.player) return;
-    try {
-        const r = await api('/api/gang/heist/join', { telegram_id: S.player.telegram_id, heist_id: heistId });
-        showPopup('✅', 'Присоединился!', '', `Участников: ${r.participant_count}`, '');
-        renderHeists();
-    } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
-}
-
-async function executeHeist(heistId) {
-    if (!S.player) return;
-    try {
-        const r = await api('/api/gang/heist/execute', { telegram_id: S.player.telegram_id, heist_id: heistId });
-        showPopup('💰', 'Налёт успешен!', `Участников: ${r.participants}`, `+$${fmt(r.share)} твоя доля`, `Общая добыча: $${fmt(r.total_reward)}`);
-        S.displayCash += r.share;
-        updateHUD();
-        renderHeists();
-    } catch (e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
 
 // ── Gang Wars ──
@@ -2924,6 +2657,57 @@ async function claimSeasonReward(level, track) {
 
 async function buySeasonPremium() {
     buyWithStars('season_1_premium');
+}
+
+// ── Tutorial ──
+const TUTORIAL_STEPS = [
+    { emoji: '🏢', text: 'Добро пожаловать в Shadow Empire! Начни с покупки бизнеса — он будет приносить деньги каждую секунду.', btn: 'Купить бизнес →', tab: 'business' },
+    { emoji: '🔫', text: 'Бизнес работает! Теперь попробуй ограбление — быстрые деньги, но рискованно.', btn: 'К ограблениям →', tab: 'robbery' },
+    { emoji: '🎰', text: 'Хочешь рискнуть? В казино можно удвоить или потерять всё.', btn: 'В казино →', tab: 'casino' },
+    { emoji: '🛒', text: 'В магазине продаётся экипировка — шапки, одежда, оружие. Бонусы к доходу и репутации.', btn: 'В магазин →', tab: 'shop' },
+    { emoji: '👥', text: 'Вступи в банду — PvP, войны, боссы и налёты. Вместе сильнее! Удачи, босс.', btn: 'Понял, погнали! 🔥', tab: null },
+];
+let tutorialStep = 0;
+
+function startTutorial() {
+    tutorialStep = 0;
+    showTutorialStep(0);
+}
+
+function showTutorialStep(n) {
+    const step = TUTORIAL_STEPS[n];
+    if (!step) return;
+    $('#tutorial-emoji').textContent = step.emoji;
+    $('#tutorial-text').textContent = step.text;
+    $('#tutorial-btn').textContent = step.btn;
+    $('#tutorial-progress').textContent = TUTORIAL_STEPS.map((_, i) => i <= n ? '●' : '○').join('');
+    $('#tutorial-overlay').classList.remove('hidden');
+}
+
+function nextTutorialStep() {
+    const step = TUTORIAL_STEPS[tutorialStep];
+    if (step && step.tab) switchTab(step.tab);
+    $('#tutorial-overlay').classList.add('hidden');
+    tutorialStep++;
+    if (tutorialStep < TUTORIAL_STEPS.length) {
+        setTimeout(() => showTutorialStep(tutorialStep), 600);
+    } else {
+        finishTutorial();
+    }
+}
+
+function finishTutorial() {
+    localStorage.setItem('tutorial_done', '1');
+    $('#tutorial-overlay').classList.add('hidden');
+}
+
+// ── Notification Toggle ──
+async function toggleNotifications() {
+    try {
+        const r = await api('/api/notifications/toggle', { telegram_id: S.player.telegram_id });
+        S.player.notifications_enabled = r.notifications_enabled;
+        renderCharacter();
+    } catch(e) { showPopup('❌', 'Ошибка', '', e.detail || '', ''); }
 }
 
 document.addEventListener('DOMContentLoaded', init);

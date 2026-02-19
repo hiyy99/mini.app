@@ -85,15 +85,6 @@ async def init_db():
         FOREIGN KEY (telegram_id) REFERENCES players(telegram_id)
     );
 
-    CREATE TABLE IF NOT EXISTS market_listings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        seller_id INTEGER NOT NULL,
-        item_id TEXT NOT NULL,
-        price REAL NOT NULL,
-        created_at REAL DEFAULT (strftime('%s','now')),
-        FOREIGN KEY (seller_id) REFERENCES players(telegram_id)
-    );
-
     CREATE TABLE IF NOT EXISTS gangs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -258,16 +249,6 @@ async def init_db():
         created_at REAL DEFAULT (strftime('%s','now'))
     );
 
-    CREATE TABLE IF NOT EXISTS player_quests (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        telegram_id INTEGER NOT NULL,
-        quest_id TEXT NOT NULL,
-        current_step INTEGER DEFAULT 0,
-        step_progress INTEGER DEFAULT 0,
-        completed INTEGER DEFAULT 0,
-        UNIQUE(telegram_id, quest_id)
-    );
-
     CREATE TABLE IF NOT EXISTS player_event_progress (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         telegram_id INTEGER NOT NULL,
@@ -311,18 +292,6 @@ async def init_db():
         level INTEGER DEFAULT 1,
         FOREIGN KEY (telegram_id) REFERENCES players(telegram_id),
         UNIQUE(telegram_id, talent_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS gang_heists (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        gang_id INTEGER NOT NULL,
-        heist_type TEXT NOT NULL,
-        status TEXT DEFAULT 'recruiting',
-        participants TEXT DEFAULT '',
-        started_at REAL DEFAULT (strftime('%s','now')),
-        executed_at REAL DEFAULT 0,
-        total_reward REAL DEFAULT 0,
-        FOREIGN KEY (gang_id) REFERENCES gangs(id)
     );
 
     CREATE TABLE IF NOT EXISTS gang_wars (
@@ -421,7 +390,6 @@ async def init_db():
         "CREATE INDEX IF NOT EXISTS idx_pb_tid ON player_businesses(telegram_id)",
         "CREATE INDEX IF NOT EXISTS idx_pi_tid ON player_inventory(telegram_id)",
         "CREATE INDEX IF NOT EXISTS idx_pc_tid ON player_cases(telegram_id)",
-        "CREATE INDEX IF NOT EXISTS idx_ml_seller ON market_listings(seller_id)",
         "CREATE INDEX IF NOT EXISTS idx_gm_gang ON gang_members(gang_id)",
         "CREATE INDEX IF NOT EXISTS idx_gu_gang ON gang_upgrades(gang_id)",
         "CREATE INDEX IF NOT EXISTS idx_gl_gang ON gang_log(gang_id)",
@@ -434,11 +402,9 @@ async def init_db():
         "CREATE INDEX IF NOT EXISTS idx_ts_day ON tournament_scores(day)",
         "CREATE INDEX IF NOT EXISTS idx_pa_tid ON player_achievements(telegram_id)",
         "CREATE INDEX IF NOT EXISTS idx_bal_gang ON boss_attack_log(gang_id)",
-        "CREATE INDEX IF NOT EXISTS idx_pq_tid ON player_quests(telegram_id)",
         "CREATE INDEX IF NOT EXISTS idx_pep_tid ON player_event_progress(telegram_id)",
         "CREATE INDEX IF NOT EXISTS idx_ps_tid ON player_skins(telegram_id)",
         "CREATE INDEX IF NOT EXISTS idx_pt_tid ON player_talents(telegram_id)",
-        "CREATE INDEX IF NOT EXISTS idx_gh_gang ON gang_heists(gang_id)",
         "CREATE INDEX IF NOT EXISTS idx_gw_att ON gang_wars(attacker_gang_id)",
         "CREATE INDEX IF NOT EXISTS idx_gw_def ON gang_wars(defender_gang_id)",
         "CREATE INDEX IF NOT EXISTS idx_ref_referrer ON referrals(referrer_id)",

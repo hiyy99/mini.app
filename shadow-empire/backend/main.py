@@ -31,17 +31,17 @@ from backend.game_config import (
     ROULETTE_RED, ROULETTE_BLACK, ROULETTE_NUMBERS,
     SHOP_ITEMS, MAX_SUSPICION, REFERRAL_BONUS, UPGRADES,
     PVP_COOLDOWN_SECONDS, PVP_STEAL_PERCENT, PVP_MIN_CASH_TO_ATTACK,
-    CASES, RARITIES, MARKET_COMMISSION,
+    CASES, RARITIES,
     MISSION_TEMPLATES, LOGIN_REWARDS, PRESTIGE_CONFIG,
     ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES, TIER_INFO, TERRITORY_ATTACK_COOLDOWN,
     VIP_PACKAGES, CASH_PACKAGES, CASE_PACKAGES, TON_PRICES,
-    TON_WALLET_ADDRESS, VIP_ITEMS, VIP_MARKET_COMMISSION, AD_COOLDOWN,
+    TON_WALLET_ADDRESS, VIP_ITEMS, AD_COOLDOWN,
     GANG_UPGRADES, GANG_CREATE_COST, GANG_MAX_MEMBERS,
     BUSINESS_SKINS, SKIN_RARITIES, SKIN_CASE, SKIN_CASE_VIP,
     TOURNAMENT_SCORE_EVENTS, TOURNAMENT_PRIZES,
-    QUEST_LINES, SEASONAL_EVENTS, BOSSES, BOSS_ATTACK_COOLDOWN,
+    SEASONAL_EVENTS, BOSSES, BOSS_ATTACK_COOLDOWN,
     TALENT_TREE, ALL_TALENTS,
-    WEEKLY_EVENTS, GANG_HEISTS, GANG_WAR_CONFIG,
+    WEEKLY_EVENTS, GANG_WAR_CONFIG,
     PVP_WEAPON_RARITY_BONUS, PVP_DEFENSE_RARITY_BONUS,
     SEASON_PASS_XP_EVENTS, SEASON_PASS_CONFIG, SEASON_PASS_REWARDS,
 )
@@ -147,11 +147,10 @@ async def admin_reset_player(req: dict):
             "players", "player_businesses", "player_character", "player_inventory",
             "player_cases", "player_upgrades", "player_achievements", "player_talents",
             "player_skins", "business_equipped_skins", "daily_missions", "daily_login",
-            "player_quests", "player_event_progress", "tournament_scores",
+            "player_event_progress", "tournament_scores",
         ]:
             await db.execute(f"DELETE FROM {table} WHERE telegram_id=?", (tid,))
         await db.execute("DELETE FROM gang_members WHERE telegram_id=?", (tid,))
-        await db.execute("DELETE FROM market_listings WHERE seller_id=?", (tid,))
         await db.commit()
         return {"status": "ok", "telegram_id": tid}
     finally:
@@ -242,15 +241,6 @@ class CaseOpenRequest(BaseModel):
 class CaseSpinRequest(BaseModel):
     telegram_id: int
     case_id: str
-
-class MarketListRequest(BaseModel):
-    telegram_id: int
-    item_id: str
-    price: float
-
-class MarketBuyRequest(BaseModel):
-    telegram_id: int
-    listing_id: int
 
 class MissionClaimRequest(BaseModel):
     telegram_id: int
@@ -420,6 +410,8 @@ async def sync_earnings(db, player, owned):
     player["cash"] = new_cash
     player["suspicion"] = new_suspicion
     player["last_collect_ts"] = now
+    if was_raided:
+        await notify_player(db, player["telegram_id"], "🚔 Полиция провела рейд! Потеряно 30% офлайн-дохода. Снижай подозрение!")
     return player, was_raided
 
 def make_referral_code(telegram_id):
@@ -601,9 +593,15 @@ async def check_achievements(db, tid):
         "tournament_top3": player.get("tournament_top3", 0),
     }
 
+    # Get existing achievements to detect new ones
+    cursor_existing = await db.execute("SELECT achievement_id FROM player_achievements WHERE telegram_id=?", (tid,))
+    existing_ids = {r["achievement_id"] for r in await cursor_existing.fetchall()}
+
     for ach in ACHIEVEMENTS:
         field_val = values.get(ach["field"], 0)
         if field_val >= ach["target"]:
+            if ach["id"] not in existing_ids:
+                await notify_player(db, tid, f"🏆 Достижение разблокировано: {ach['name']}!")
             await db.execute(
                 "INSERT OR IGNORE INTO player_achievements (telegram_id, achievement_id) VALUES (?,?)",
                 (tid, ach["id"]),
@@ -670,59 +668,6 @@ async def check_and_distribute_tournament_prizes(db, tid):
         await db.execute("UPDATE players SET tournament_top3=tournament_top3+1 WHERE telegram_id=?", (tid,))
     await db.commit()
     return {"place": place, "prize": prize}
-
-
-# ── Quests ──
-
-async def init_quests(db, tid, player_level):
-    """Create quest entries for available quest lines."""
-    for ql in QUEST_LINES:
-        if player_level >= ql["unlock_level"]:
-            await db.execute(
-                "INSERT OR IGNORE INTO player_quests (telegram_id, quest_id, current_step, step_progress) VALUES (?,?,0,0)",
-                (tid, ql["id"]),
-            )
-    await db.commit()
-
-async def get_player_quests(db, tid):
-    cursor = await db.execute("SELECT * FROM player_quests WHERE telegram_id=?", (tid,))
-    return [dict(r) for r in await cursor.fetchall()]
-
-async def advance_quest(db, tid, trigger_type, amount=1):
-    """Advance progress on active quests matching trigger_type."""
-    quests = await get_player_quests(db, tid)
-    for q in quests:
-        if q["completed"]:
-            continue
-        ql = next((l for l in QUEST_LINES if l["id"] == q["quest_id"]), None)
-        if not ql:
-            continue
-        step_idx = q["current_step"]
-        if step_idx >= len(ql["steps"]):
-            continue
-        step = ql["steps"][step_idx]
-        if step["trigger"] != trigger_type:
-            continue
-        new_progress = min(q["step_progress"] + amount, step["target"])
-        if new_progress >= step["target"]:
-            # Step completed — give reward
-            if step["reward_type"] == "cash":
-                await db.execute("UPDATE players SET cash=cash+? WHERE telegram_id=?", (step["reward_amount"], tid))
-            elif step["reward_type"] == "case":
-                await db.execute("INSERT INTO player_cases (telegram_id, case_id) VALUES (?,?)", (tid, step["reward_amount"]))
-            # Move to next step or complete quest
-            next_step = step_idx + 1
-            completed = 1 if next_step >= len(ql["steps"]) else 0
-            await db.execute(
-                "UPDATE player_quests SET current_step=?, step_progress=0, completed=? WHERE telegram_id=? AND quest_id=?",
-                (next_step, completed, tid, q["quest_id"]),
-            )
-        else:
-            await db.execute(
-                "UPDATE player_quests SET step_progress=? WHERE telegram_id=? AND quest_id=?",
-                (new_progress, tid, q["quest_id"]),
-            )
-    await db.commit()
 
 
 # ── Seasonal Events ──
@@ -908,11 +853,10 @@ async def get_boss_data(db, gang_id):
 # ── Unified Action Tracker ──
 
 async def track_action(db, tid, action_type, amount=1):
-    """Central tracker — advances missions, tournament, events, and quests."""
+    """Central tracker — advances missions, tournament, events, and season pass."""
     await advance_mission(db, tid, action_type, amount)
     await advance_tournament(db, tid, action_type, amount)
     await advance_event(db, tid, action_type, amount)
-    await advance_quest(db, tid, action_type, amount)
     await advance_season_pass(db, tid, action_type, amount)
 
 
@@ -1011,19 +955,6 @@ async def player_init(req: PlayerInit):
         ref_row = await cursor.fetchone()
         referral_count = ref_row["cnt"] if ref_row else 0
 
-        # Market listings from other players
-        cursor = await db.execute(
-            "SELECT ml.*, p.username as seller_name FROM market_listings ml JOIN players p ON p.telegram_id=ml.seller_id WHERE ml.seller_id != ? ORDER BY ml.created_at DESC LIMIT 50",
-            (req.telegram_id,)
-        )
-        market_listings = [dict(r) for r in await cursor.fetchall()]
-
-        # Own listings
-        cursor = await db.execute(
-            "SELECT * FROM market_listings WHERE seller_id = ?", (req.telegram_id,)
-        )
-        my_listings = [dict(r) for r in await cursor.fetchall()]
-
         # Daily missions
         await generate_daily_missions(db, req.telegram_id)
         daily_missions = await get_daily_missions(db, req.telegram_id)
@@ -1041,10 +972,6 @@ async def player_init(req: PlayerInit):
         cursor = await db.execute("SELECT score FROM tournament_scores WHERE telegram_id=? AND day=?", (req.telegram_id, today_utc()))
         ts_row = await cursor.fetchone()
         tournament_score = ts_row["score"] if ts_row else 0
-
-        # Quests
-        await init_quests(db, req.telegram_id, get_player_level(owned))
-        player_quests = await get_player_quests(db, req.telegram_id)
 
         # Event
         active_event = get_active_event()
@@ -1095,8 +1022,6 @@ async def player_init(req: PlayerInit):
             "upgrades_config": UPGRADES,
             "cases_config": CASES,
             "rarities": RARITIES,
-            "market_listings": market_listings,
-            "my_listings": my_listings,
             "referral_count": referral_count,
             "daily_missions": daily_missions,
             "login_data": login_data,
@@ -1123,9 +1048,6 @@ async def player_init(req: PlayerInit):
             # Tournament
             "tournament_score": tournament_score,
             "tournament_prize": tournament_prize,
-            # Quests
-            "player_quests": player_quests,
-            "quest_lines": QUEST_LINES,
             # Event
             "active_event": active_event,
             "event_progress": event_progress,
@@ -1140,8 +1062,6 @@ async def player_init(req: PlayerInit):
             "talent_points": player.get("talent_points", 0),
             # Weekly event
             "weekly_event": get_active_weekly_event(),
-            # Gang heists config
-            "gang_heists_config": GANG_HEISTS,
             # Gang war config
             "gang_war_config": GANG_WAR_CONFIG,
             # Season Pass
@@ -1450,6 +1370,8 @@ async def casino_play(req: CasinoBetRequest):
             await track_action(db, req.telegram_id, "casino_play")
             if payout > 0:
                 await track_action(db, req.telegram_id, "casino_win")
+            if payout > 0 and req.bet > 0 and payout / req.bet >= 10:
+                await notify_player(db, req.telegram_id, f"🎰 Крупный выигрыш в казино: +${int(net):,}!")
 
             player = await get_player(db, req.telegram_id)
 
@@ -1761,61 +1683,6 @@ async def spin_case(req: CaseSpinRequest):
             }
         finally:
             await db.close()
-
-
-# ── Market ──
-
-@app.post("/api/market/sell")
-async def market_sell(req: MarketListRequest):
-    raise HTTPException(400, "Продажа предметов временно отключена")
-
-
-@app.post("/api/market/buy")
-async def market_buy(req: MarketBuyRequest):
-    raise HTTPException(400, "Маркет временно отключён")
-
-
-@app.post("/api/market/cancel")
-async def market_cancel(req: MarketListRequest):
-    """Cancel a listing — return item to inventory."""
-    async with get_player_lock(req.telegram_id):
-        db = await get_db()
-        try:
-            cursor = await db.execute(
-                "SELECT * FROM market_listings WHERE seller_id=? AND item_id=?",
-                (req.telegram_id, req.item_id)
-            )
-            listing = await cursor.fetchone()
-            if not listing: raise HTTPException(400, "Listing not found")
-
-            await db.execute("DELETE FROM market_listings WHERE id=?", (listing["id"],))
-            await db.execute(
-                "INSERT OR IGNORE INTO player_inventory (telegram_id, item_id) VALUES (?, ?)",
-                (req.telegram_id, req.item_id)
-            )
-            await db.commit()
-
-            inventory = await get_inventory(db, req.telegram_id)
-            cursor = await db.execute("SELECT * FROM market_listings WHERE seller_id=?", (req.telegram_id,))
-            my_listings = [dict(r) for r in await cursor.fetchall()]
-
-            return {"inventory": inventory, "my_listings": my_listings}
-
-        finally:
-            await db.close()
-
-
-@app.get("/api/market")
-async def get_market():
-    db = await get_db()
-    try:
-        cursor = await db.execute(
-            "SELECT ml.*, p.username as seller_name FROM market_listings ml JOIN players p ON p.telegram_id=ml.seller_id ORDER BY ml.created_at DESC LIMIT 100"
-        )
-        listings = [dict(r) for r in await cursor.fetchall()]
-        return {"listings": listings}
-    finally:
-        await db.close()
 
 
 # ── Gangs ──
@@ -2388,15 +2255,6 @@ async def do_prestige(req: PrestigeRequest):
             tb = get_talent_bonuses(talents)
             start_cash = 1000 + tb["quick_start"]
             start_fear = tb["intimidation"]
-
-            # Anti-abuse: cancel market listings (return items to inventory)
-            cursor = await db.execute("SELECT item_id FROM market_listings WHERE seller_id=?", (req.telegram_id,))
-            for row in await cursor.fetchall():
-                await db.execute(
-                    "INSERT OR IGNORE INTO player_inventory (telegram_id, item_id) VALUES (?,?)",
-                    (req.telegram_id, row["item_id"]),
-                )
-            await db.execute("DELETE FROM market_listings WHERE seller_id=?", (req.telegram_id,))
 
             # Anti-abuse: delete unopened cases
             await db.execute("DELETE FROM player_cases WHERE telegram_id=?", (req.telegram_id,))
@@ -3105,20 +2963,6 @@ async def tournament_leaderboard():
         await db.close()
 
 
-# ── Quests ──
-
-@app.get("/api/quests/{telegram_id}")
-async def get_quests(telegram_id: int):
-    db = await get_db()
-    try:
-        owned = await get_owned_businesses(db, telegram_id)
-        await init_quests(db, telegram_id, get_player_level(owned))
-        quests = await get_player_quests(db, telegram_id)
-        return {"quests": quests, "quest_lines": QUEST_LINES}
-    finally:
-        await db.close()
-
-
 # ── Event Claim ──
 
 @app.post("/api/event/claim")
@@ -3277,9 +3121,16 @@ async def boss_attack(req: BossAttackRequest):
             rewards = None
             if defeated:
                 await distribute_boss_rewards(db, req.gang_id, boss_row["boss_id"])
+                # Notify all gang members
+                boss_name = boss_row["boss_id"]
+                boss_cfg = next((b for b in BOSSES if b["id"] == boss_name), None)
+                display_name = boss_cfg["name"] if boss_cfg else boss_name
+                cursor_members = await db.execute("SELECT telegram_id FROM players WHERE gang_id=?", (req.gang_id,))
+                for m in await cursor_members.fetchall():
+                    await notify_player(db, m["telegram_id"], f"👹 Босс {display_name} повержен! Награды распределены 💰")
                 # Spawn next boss
                 await spawn_boss_for_gang(db, req.gang_id)
-                rewards = {"boss_defeated": True, "boss_name": boss_row["boss_id"]}
+                rewards = {"boss_defeated": True, "boss_name": boss_name}
 
             boss_data = await get_boss_data(db, req.gang_id)
             player = await get_player(db, req.telegram_id)
@@ -3320,179 +3171,20 @@ async def notify_player(db, telegram_id: int, text: str):
         asyncio.create_task(send_telegram_notification(telegram_id, text))
 
 
-# ── Gang Heists ──
-
-class GangHeistStartRequest(BaseModel):
+class NotificationToggleRequest(BaseModel):
     telegram_id: int
-    heist_type: str
 
-class GangHeistJoinRequest(BaseModel):
-    telegram_id: int
-    heist_id: int
-
-class GangHeistExecuteRequest(BaseModel):
-    telegram_id: int
-    heist_id: int
-
-@app.post("/api/gang/heist/start")
-async def gang_heist_start(req: GangHeistStartRequest):
-    async with get_player_lock(req.telegram_id):
-        db = await get_db()
-        try:
-            player = await get_player(db, req.telegram_id)
-            if not player: raise HTTPException(404, "Player not found")
-            if not player["gang_id"]: raise HTTPException(400, "Not in a gang")
-
-            cfg = GANG_HEISTS.get(req.heist_type)
-            if not cfg: raise HTTPException(400, "Unknown heist type")
-
-            # Check role
-            cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
-            member = await cursor.fetchone()
-            if not member or member["role"] not in ("leader", "officer"):
-                raise HTTPException(400, "Only leader/officer can start heists")
-
-            # Check cooldown
-            cursor = await db.execute("SELECT * FROM gangs WHERE id=?", (player["gang_id"],))
-            gang = dict(await cursor.fetchone())
-            now = time.time()
-            if gang.get("last_heist_ts", 0) + cfg["cooldown"] > now:
-                remaining = int(gang["last_heist_ts"] + cfg["cooldown"] - now)
-                raise HTTPException(400, f"Heist cooldown: {remaining}s")
-
-            # Check no active heist
-            cursor = await db.execute(
-                "SELECT id FROM gang_heists WHERE gang_id=? AND status='recruiting'", (player["gang_id"],)
-            )
-            if await cursor.fetchone():
-                raise HTTPException(400, "Already have an active heist")
-
-            # Create heist
-            await db.execute(
-                "INSERT INTO gang_heists (gang_id, heist_type, participants) VALUES (?,?,?)",
-                (player["gang_id"], req.heist_type, str(req.telegram_id)),
-            )
-            await db.commit()
-
-            cursor = await db.execute(
-                "SELECT * FROM gang_heists WHERE gang_id=? AND status='recruiting' ORDER BY id DESC LIMIT 1",
-                (player["gang_id"],)
-            )
-            heist = dict(await cursor.fetchone())
-            await gang_log(db, player["gang_id"], f"🏴 {player['username']} начал ограбление: {cfg['name']}")
-            await db.commit()
-
-            return {"heist": heist, "config": cfg}
-        finally:
-            await db.close()
-
-
-@app.post("/api/gang/heist/join")
-async def gang_heist_join(req: GangHeistJoinRequest):
-    async with get_player_lock(req.telegram_id):
-        db = await get_db()
-        try:
-            player = await get_player(db, req.telegram_id)
-            if not player: raise HTTPException(404, "Player not found")
-            if not player["gang_id"]: raise HTTPException(400, "Not in a gang")
-
-            cursor = await db.execute(
-                "SELECT * FROM gang_heists WHERE id=? AND gang_id=? AND status='recruiting'",
-                (req.heist_id, player["gang_id"]),
-            )
-            row = await cursor.fetchone()
-            if not row: raise HTTPException(400, "Heist not found or not recruiting")
-            heist = dict(row)
-
-            participants = heist["participants"].split(",") if heist["participants"] else []
-            if str(req.telegram_id) in participants:
-                raise HTTPException(400, "Already joined")
-
-            participants.append(str(req.telegram_id))
-            await db.execute(
-                "UPDATE gang_heists SET participants=? WHERE id=?",
-                (",".join(participants), heist["id"]),
-            )
-            await db.commit()
-
-            heist["participants"] = ",".join(participants)
-            cfg = GANG_HEISTS.get(heist["heist_type"], {})
-            return {"heist": heist, "config": cfg, "participant_count": len(participants)}
-        finally:
-            await db.close()
-
-
-@app.post("/api/gang/heist/execute")
-async def gang_heist_execute(req: GangHeistExecuteRequest):
-    async with get_player_lock(req.telegram_id):
-        db = await get_db()
-        try:
-            player = await get_player(db, req.telegram_id)
-            if not player: raise HTTPException(404, "Player not found")
-            if not player["gang_id"]: raise HTTPException(400, "Not in a gang")
-
-            cursor = await db.execute("SELECT role FROM gang_members WHERE telegram_id=?", (req.telegram_id,))
-            member = await cursor.fetchone()
-            if not member or member["role"] not in ("leader", "officer"):
-                raise HTTPException(400, "Only leader/officer can execute")
-
-            cursor = await db.execute(
-                "SELECT * FROM gang_heists WHERE id=? AND gang_id=? AND status='recruiting'",
-                (req.heist_id, player["gang_id"]),
-            )
-            row = await cursor.fetchone()
-            if not row: raise HTTPException(400, "Heist not found")
-            heist = dict(row)
-
-            cfg = GANG_HEISTS.get(heist["heist_type"])
-            if not cfg: raise HTTPException(400, "Invalid heist type")
-
-            participants = heist["participants"].split(",") if heist["participants"] else []
-            if len(participants) < cfg["min_members"]:
-                raise HTTPException(400, f"Need at least {cfg['min_members']} members")
-
-            now = time.time()
-            # Calculate reward
-            base_reward = random.uniform(cfg["min_reward"], cfg["max_reward"])
-            member_bonus = len(participants) * cfg["reward_per_member"]
-            total_reward = base_reward + member_bonus
-
-            # Distribute evenly among participants
-            share = total_reward / len(participants)
-            for pid_str in participants:
-                pid = int(pid_str)
-                await db.execute("UPDATE players SET cash=cash+?, total_earned=total_earned+? WHERE telegram_id=?", (share, share, pid))
-                await notify_player(db, pid, f"🏴 Ограбление \"{cfg['name']}\" успешно!\n💰 Твоя доля: ${int(share):,}")
-
-            # Update heist status
-            await db.execute(
-                "UPDATE gang_heists SET status='completed', executed_at=?, total_reward=? WHERE id=?",
-                (now, total_reward, heist["id"]),
-            )
-            await db.execute("UPDATE gangs SET last_heist_ts=? WHERE id=?", (now, player["gang_id"]))
-            await gang_log(db, player["gang_id"], f"💰 Ограбление \"{cfg['name']}\" принесло ${int(total_reward):,}")
-            await db.commit()
-
-            return {
-                "success": True,
-                "total_reward": round(total_reward, 2),
-                "share": round(share, 2),
-                "participants": len(participants),
-            }
-        finally:
-            await db.close()
-
-
-@app.get("/api/gang/heists/{gang_id}")
-async def get_active_heists(gang_id: int):
+@app.post("/api/notifications/toggle")
+async def toggle_notifications(req: NotificationToggleRequest):
     db = await get_db()
     try:
-        cursor = await db.execute(
-            "SELECT * FROM gang_heists WHERE gang_id=? AND status='recruiting' ORDER BY id DESC",
-            (gang_id,),
-        )
-        heists = [dict(r) for r in await cursor.fetchall()]
-        return {"heists": heists}
+        player = await get_player(db, req.telegram_id)
+        if not player:
+            raise HTTPException(404, "Player not found")
+        new_val = 0 if player.get("notifications_enabled", 1) else 1
+        await db.execute("UPDATE players SET notifications_enabled=? WHERE telegram_id=?", (new_val, req.telegram_id))
+        await db.commit()
+        return {"notifications_enabled": new_val}
     finally:
         await db.close()
 
@@ -3586,9 +3278,19 @@ async def check_and_finalize_wars(db):
             await db.execute("UPDATE gangs SET cash_bank=cash_bank+? WHERE id=?", (GANG_WAR_CONFIG["loser_reward"], loser))
             await gang_log(db, winner, f"🏆 Война выиграна! +${GANG_WAR_CONFIG['winner_reward']:,} в банк")
             await gang_log(db, loser, f"😞 Война проиграна. +${GANG_WAR_CONFIG['loser_reward']:,} утешительный приз")
+            # Notify both gang leaders
+            for gid, result in [(winner, "🏆 Ваша банда победила!"), (loser, "😞 Ваша банда проиграла.")]:
+                c = await db.execute("SELECT leader_id FROM gangs WHERE id=?", (gid,))
+                g = await c.fetchone()
+                if g:
+                    await notify_player(db, g["leader_id"], f"⚔️ Война окончена! {result}")
         else:
             for gid in [war["attacker_gang_id"], war["defender_gang_id"]]:
                 await gang_log(db, gid, "🤝 Война окончена ничьей")
+                c = await db.execute("SELECT leader_id FROM gangs WHERE id=?", (gid,))
+                g = await c.fetchone()
+                if g:
+                    await notify_player(db, g["leader_id"], "⚔️ Война окончена! 🤝 Ничья.")
     if wars:
         await db.commit()
 

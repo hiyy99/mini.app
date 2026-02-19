@@ -443,9 +443,6 @@ CASES = {
     },
 }
 
-# Market commission (10%)
-MARKET_COMMISSION = 0.10
-
 # Suspicion thresholds
 RAID_THRESHOLD = 80.0
 SUSPICION_DECAY_PER_SEC = 0.08
@@ -585,7 +582,6 @@ ACHIEVEMENT_CATEGORIES = {
     "prestige": {"name": "Престиж", "emoji": "⚡"},
     "casino": {"name": "Казино", "emoji": "🎰"},
     "skins": {"name": "Скины", "emoji": "🎨"},
-    "market": {"name": "Рынок", "emoji": "🏪"},
     "tournament": {"name": "Турнир", "emoji": "🏆"},
 }
 
@@ -644,10 +640,6 @@ ACHIEVEMENTS = [
     {"id": "skins_5", "name": "Стилист", "emoji": "🎨", "description": "Собрать 5 скинов", "category": "skins", "tier": "bronze", "field": "skins_count", "target": 5, "reward": 5000},
     {"id": "skins_15", "name": "Модник", "emoji": "✨", "description": "Собрать 15 скинов", "category": "skins", "tier": "silver", "field": "skins_count", "target": 15, "reward": 20000},
     {"id": "skins_30", "name": "Коллекционер стиля", "emoji": "🎭", "description": "Собрать 30 скинов", "category": "skins", "tier": "gold", "field": "skins_count", "target": 30, "reward": 75000},
-    # ── Market (3 tiers) ──
-    {"id": "market_1", "name": "Торговец", "emoji": "🏪", "description": "Продать предмет на рынке", "category": "market", "tier": "bronze", "field": "market_sales", "target": 1, "reward": 3000},
-    {"id": "market_10", "name": "Барыга", "emoji": "💼", "description": "Продать 10 предметов", "category": "market", "tier": "silver", "field": "market_sales", "target": 10, "reward": 20000},
-    {"id": "market_25", "name": "Торговый Магнат", "emoji": "🏦", "description": "Продать 25 предметов", "category": "market", "tier": "gold", "field": "market_sales", "target": 25, "reward": 75000},
     # ── Tournament (2 tiers) ──
     {"id": "tourn_top10", "name": "Турнирный боец", "emoji": "🏆", "description": "Войти в топ-10 турнира", "category": "tournament", "tier": "silver", "field": "tournament_top10", "target": 1, "reward": 25000},
     {"id": "tourn_top3", "name": "Чемпион", "emoji": "🥇", "description": "Войти в топ-3 турнира", "category": "tournament", "tier": "gold", "field": "tournament_top3", "target": 1, "reward": 100000},
@@ -679,65 +671,6 @@ TOURNAMENT_PRIZES = [
     {"place": 10, "cash": 5000, "cases": 0, "label": "10 место"},
 ]
 
-# ── Quest Lines ──
-QUEST_LINES = [
-    {
-        "id": "beginner",
-        "name": "История Начала",
-        "emoji": "📖",
-        "description": "Первые шаги в мире Shadow Empire",
-        "unlock_level": 0,
-        "steps": [
-            {"trigger": "buy_business", "target": 1, "description": "Купи первый бизнес", "reward_type": "cash", "reward_amount": 2000},
-            {"trigger": "robbery", "target": 1, "description": "Соверши ограбление", "reward_type": "cash", "reward_amount": 3000},
-            {"trigger": "casino_play", "target": 1, "description": "Сыграй в казино", "reward_type": "cash", "reward_amount": 2000},
-            {"trigger": "shop_buy", "target": 1, "description": "Купи предмет в магазине", "reward_type": "cash", "reward_amount": 5000},
-            {"trigger": "gang_join", "target": 1, "description": "Вступи в банду", "reward_type": "cash", "reward_amount": 10000},
-        ],
-    },
-    {
-        "id": "power",
-        "name": "Путь к Власти",
-        "emoji": "👑",
-        "description": "Стань настоящим боссом",
-        "unlock_level": 5,
-        "steps": [
-            {"trigger": "buy_business", "target": 5, "description": "Владей 5 бизнесами", "reward_type": "cash", "reward_amount": 15000},
-            {"trigger": "robbery", "target": 10, "description": "Соверши 10 ограблений", "reward_type": "cash", "reward_amount": 20000},
-            {"trigger": "pvp_win", "target": 5, "description": "Победи 5 раз в PvP", "reward_type": "cash", "reward_amount": 30000},
-            {"trigger": "territory_capture", "target": 1, "description": "Захвати территорию", "reward_type": "cash", "reward_amount": 50000},
-            {"trigger": "earn_cash", "target": 1000000, "description": "Заработай $1,000,000", "reward_type": "case", "reward_amount": "case_legendary"},
-        ],
-    },
-    {
-        "id": "rising_shadow",
-        "name": "Восходящая Тень",
-        "emoji": "🌑",
-        "description": "Укрепи свою власть в криминальном мире",
-        "unlock_level": 10,
-        "steps": [
-            {"trigger": "buy_business", "target": 10, "description": "Владей 10 бизнесами", "reward_type": "cash", "reward_amount": 25000},
-            {"trigger": "robbery", "target": 50, "description": "Соверши 50 ограблений", "reward_type": "cash", "reward_amount": 40000},
-            {"trigger": "pvp_win", "target": 10, "description": "Победи 10 раз в PvP", "reward_type": "cash", "reward_amount": 50000},
-            {"trigger": "territory_capture", "target": 1, "description": "Захвати территорию", "reward_type": "cash", "reward_amount": 75000},
-            {"trigger": "earn_cash", "target": 5000000, "description": "Заработай $5,000,000", "reward_type": "case", "reward_amount": "case_legendary"},
-        ],
-    },
-    {
-        "id": "shadow_lord",
-        "name": "Теневой Лорд",
-        "emoji": "😈",
-        "description": "Достигни вершины криминального мира",
-        "unlock_level": 15,
-        "steps": [
-            {"trigger": "buy_business", "target": 15, "description": "Владей 15 бизнесами", "reward_type": "cash", "reward_amount": 50000},
-            {"trigger": "prestige", "target": 1, "description": "Соверши престиж", "reward_type": "cash", "reward_amount": 100000},
-            {"trigger": "legendary_collect", "target": 3, "description": "Собери 3 легендарки", "reward_type": "cash", "reward_amount": 150000},
-            {"trigger": "boss_kill", "target": 3, "description": "Убей 3 боссов", "reward_type": "cash", "reward_amount": 200000},
-            {"trigger": "earn_cash", "target": 10000000, "description": "Заработай $10,000,000", "reward_type": "cash", "reward_amount": 500000},
-        ],
-    },
-]
 
 # ── Seasonal Events ──
 SEASONAL_EVENTS = [
@@ -899,8 +832,6 @@ VIP_ITEMS = {
     },
 }
 
-VIP_MARKET_COMMISSION = 0.05  # 5% for VIP instead of 10%
-
 # Merge VIP items into SHOP_ITEMS so inventory/equip system recognizes them
 SHOP_ITEMS.update(VIP_ITEMS)
 
@@ -939,39 +870,11 @@ GANG_MAX_MEMBERS = 20
 WEEKLY_EVENTS = {
     0: {"id": "monday_grind", "name": "Рабочий Понедельник", "emoji": "💼", "description": "Бизнес приносит больше", "bonus_type": "income", "multiplier": 1.20},
     1: {"id": "tuesday_heist", "name": "Вторник Ограблений", "emoji": "🔫", "description": "Награды за ограбления увеличены", "bonus_type": "robbery", "multiplier": 1.25},
-    2: {"id": "wednesday_trade", "name": "Среда Торговли", "emoji": "🏪", "description": "Комиссия рынка снижена", "bonus_type": "market", "multiplier": 0.5},
+    2: {"id": "wednesday_grind", "name": "Среда Бизнеса", "emoji": "🏢", "description": "Бизнес приносит больше", "bonus_type": "income", "multiplier": 1.15},
     3: {"id": "thursday_luck", "name": "Четверг Удачи", "emoji": "🍀", "description": "Бонус казино", "bonus_type": "casino", "multiplier": 1.15},
     4: {"id": "friday_war", "name": "Пятница Войны", "emoji": "⚔️", "description": "PvP награды увеличены", "bonus_type": "pvp", "multiplier": 1.30},
     5: {"id": "saturday_loot", "name": "Субботний Лут", "emoji": "📦", "description": "Шанс редкого дропа выше", "bonus_type": "loot", "multiplier": 1.20},
     6: {"id": "sunday_rest", "name": "Воскресный Отдых", "emoji": "💰", "description": "Общий доход увеличен", "bonus_type": "income", "multiplier": 1.25},
-}
-
-# ── Gang Heists ──
-GANG_HEISTS = {
-    "warehouse_heist": {
-        "name": "Ограбление склада", "emoji": "📦",
-        "description": "Банда захватывает склад с товаром",
-        "min_members": 2, "min_gang_level": 0,
-        "cooldown": 3600,  # 1 hour
-        "min_reward": 20000, "max_reward": 80000,
-        "reward_per_member": 5000,
-    },
-    "vault_heist": {
-        "name": "Взлом хранилища", "emoji": "🏦",
-        "description": "Проникновение в банковское хранилище",
-        "min_members": 3, "min_gang_level": 3,
-        "cooldown": 7200,  # 2 hours
-        "min_reward": 100000, "max_reward": 300000,
-        "reward_per_member": 15000,
-    },
-    "casino_heist": {
-        "name": "Казино ограбление", "emoji": "🎰",
-        "description": "Дерзкий налёт на казино",
-        "min_members": 4, "min_gang_level": 5,
-        "cooldown": 14400,  # 4 hours
-        "min_reward": 300000, "max_reward": 1000000,
-        "reward_per_member": 40000,
-    },
 }
 
 # ── Gang Wars ──

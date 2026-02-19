@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Shadow Empire</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <link rel="stylesheet" href="css/style.css?v=38">
+    <link rel="stylesheet" href="css/style.css?v=40">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
     <!-- TON Connect removed — Stars-only payments -->
@@ -46,6 +46,16 @@
                 <div id="case-won-desc" class="case-won-desc"></div>
             </div>
             <button id="case-ok-btn" class="btn btn-primary hidden" onclick="closeCaseOverlay()">OK</button>
+        </div>
+    </div>
+
+    <!-- Tutorial overlay -->
+    <div id="tutorial-overlay" class="popup hidden">
+        <div class="popup-content tutorial-popup">
+            <div id="tutorial-emoji" class="tutorial-emoji"></div>
+            <div id="tutorial-text" class="tutorial-text"></div>
+            <button id="tutorial-btn" class="btn btn-primary" onclick="nextTutorialStep()"></button>
+            <div id="tutorial-progress" class="tutorial-progress"></div>
         </div>
     </div>
 
@@ -264,7 +274,6 @@
                 <div class="sub-tabs">
                     <button class="sub-tab active" onclick="switchDelaSubTab('robberies',this)">🔫 Ограбления</button>
                     <button class="sub-tab" onclick="switchDelaSubTab('missions',this)">📋 Миссии</button>
-                    <button class="sub-tab" onclick="switchDelaSubTab('quests',this)">📜 Квесты</button>
                     <button class="sub-tab" onclick="switchDelaSubTab('season-pass',this)">🏴 Пас</button>
                 </div>
                 <div id="dela-robberies">
@@ -275,10 +284,7 @@
                     <div class="tab-header"><h2>📋 Ежедневные миссии</h2><p>Выполняй задания — получай награды</p></div>
                     <div id="missions-list" class="missions-list"></div>
                 </div>
-                <div id="dela-quests" class="hidden">
-                    <div class="tab-header"><h2>📜 Квестовые линии</h2><p>Проходи сюжет — получай награды</p></div>
-                    <div id="quests-list" class="quests-list"></div>
-                </div>
+
                 <div id="dela-season-pass" class="hidden">
                     <div id="season-pass-content"></div>
                 </div>
@@ -289,7 +295,6 @@
                 <div class="sub-tabs">
                     <button class="sub-tab active" onclick="switchShopSection('items',this)">🛒 Магазин</button>
                     <button class="sub-tab" onclick="switchShopSection('cases',this)">📦 Кейсы</button>
-                    <button class="sub-tab" onclick="switchShopSection('market',this)">🔫 Чёрный рынок</button>
                     <button class="sub-tab" onclick="switchShopSection('vip',this)">👑 VIP</button>
                 </div>
                 <!-- Regular shop -->
@@ -308,14 +313,7 @@
                     <div class="tab-header"><h2>📦 Кейсы</h2><p>Крути кейсы — получай предметы</p></div>
                     <div id="cases-list" class="cases-grid"></div>
                 </div>
-                <!-- Black Market -->
-                <div id="shop-market-section" class="hidden">
-                    <div class="tab-header"><h2>🔫 Чёрный рынок</h2><p>Оружие и торговля</p></div>
-                    <h3 style="margin:10px 0 8px;font-size:.9rem">⚔️ Оружие</h3>
-                    <div id="weapons-list" class="shop-list"></div>
-                    <!-- Player marketplace disabled -->
-                    <div id="market-listings-list" class="shop-list hidden"></div>
-                </div>
+
                 <!-- VIP Shop -->
                 <div id="shop-vip-section" class="hidden">
                     <div id="vip-shop-content"></div>
@@ -355,11 +353,6 @@
                         <h3>🎒 Инвентарь</h3>
                         <div id="inv-list" class="inv-list"></div>
                     </div>
-                    <!-- My market listings (disabled — market removed) -->
-                    <div class="inv-section hidden" id="my-listings-section">
-                        <h3>📋 Мои лоты на площадке</h3>
-                        <div id="my-listings-list" class="shop-list"></div>
-                    </div>
                 </div>
                 <div id="char-achievements" class="hidden">
                     <div class="tab-header"><h2>🏆 Достижения</h2><p>Разблокируй и забери награды</p></div>
@@ -373,7 +366,6 @@
                     <button class="sub-tab active" onclick="switchGangSubTab('gang-main',this)">👥 Банда</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-territories',this)">🗺 Территории</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-pvp',this)">⚔️ PvP</button>
-                    <button class="sub-tab" onclick="switchGangSubTab('gang-heists',this)">🏴 Налёт</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-wars',this)">⚔️ Война</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-tournament',this)">🏆 Турнир</button>
                     <button class="sub-tab" onclick="switchGangSubTab('gang-boss',this)">👹 Босс</button>
@@ -400,10 +392,7 @@
                     <div id="tournament-leaderboard" class="tournament-leaderboard"></div>
                     <div id="tournament-prizes-info" class="tournament-prizes-info"></div>
                 </div>
-                <div id="gang-heists" class="hidden">
-                    <div class="tab-header"><h2>🏴 Совместные налёты</h2><p>Собери команду — ограби по-крупному</p></div>
-                    <div id="heists-section"></div>
-                </div>
+
                 <div id="gang-wars" class="hidden">
                     <div class="tab-header"><h2>⚔️ Войны банд</h2><p>Объяви войну и набирай очки</p></div>
                     <div id="wars-section"></div>
@@ -430,6 +419,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=38"></script>
+    <script src="js/app.js?v=40"></script>
 </body>
 </html>
