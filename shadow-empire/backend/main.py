@@ -62,6 +62,7 @@ def validate_init_data(init_data: str) -> dict | None:
     secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(computed_hash, check_hash):
+        print(f"HMAC mismatch: computed={computed_hash[:16]}... check={check_hash[:16]}... token_start={BOT_TOKEN[:10]}")
         return None
     user_data = parsed.get("user", "")
     if user_data:
