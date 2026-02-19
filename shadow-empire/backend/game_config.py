@@ -815,7 +815,7 @@ BOSSES = [
         "name": "Главарь головорезов",
         "emoji": "👊",
         "base_hp": 5000,
-        "reward_pool": 50000,
+        "reward_pool": 15000000,
         "hp_per_gang_level": 100,
     },
     {
@@ -823,7 +823,7 @@ BOSSES = [
         "name": "Лорд Картеля",
         "emoji": "🦹",
         "base_hp": 15000,
-        "reward_pool": 150000,
+        "reward_pool": 50000000,
         "hp_per_gang_level": 200,
     },
     {
@@ -831,7 +831,7 @@ BOSSES = [
         "name": "Теневой Король",
         "emoji": "👑",
         "base_hp": 50000,
-        "reward_pool": 500000,
+        "reward_pool": 150000000,
         "hp_per_gang_level": 500,
     },
     {
